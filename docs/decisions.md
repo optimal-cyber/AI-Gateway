@@ -106,7 +106,9 @@ to defend as a "guardrail system."
 
 ## ADR-004 — AWS Network Firewall first, Cloudflare Gateway later
 
-**Status:** Accepted (2026-05-27)
+**Status:** Superseded by ADR-009 (2026-05-27) — egress control is now a Squid
+allowlist proxy by default; Network Firewall is retained as an optional module.
+Original record kept below for the reasoning trail.
 
 **Context.** Two distinct ways to constrain workload egress: (1) filter at the AWS
 network boundary (Network Firewall on the VPC egress path), or (2) filter at the
@@ -274,3 +276,80 @@ throwaway domain — loses the portfolio value of demonstrating on the real
 - Tunnel UUIDs are only known after the tunnels exist (Phase 4), so the CNAME values
   are filled in at that point.
 - A DNS misconfiguration is contained to `*.lab.gooptimal.io`.
+
+---
+
+## ADR-009 — Squid allowlist proxy as default egress control; Network Firewall optional
+
+**Status:** Accepted (2026-05-27). Supersedes the default-control decision in ADR-004.
+
+**Context.** ADR-004 chose AWS Network Firewall (NFW) as the day-one egress control.
+On costing it for `terraform plan`, a single NFW firewall endpoint bills at
+**~$0.395/endpoint-hour ≈ $288/month** before per-GB data processing — by itself
+~3.6× the ~$80/month ceiling in requirement #8 and well over the spec's own
+"~$100/month at idle" README target. An always-on lab with NFW lands around
+$350–380/month. The operator (cost discipline is priority #2) elected a cheaper
+control that preserves the *demonstrated capability* — domain-allowlisted workload
+egress — without the managed-service price.
+
+**Decision.** Default egress control is a **hardened Squid forward proxy** enforcing
+a `dstdomain` allowlist, behind a **NAT Gateway**. Enforcement is structural, not
+opt-in:
+
+- **App subnets have no `0.0.0.0/0` route** (route table is `local`-only). The sole
+  path to the internet is the Squid proxy's private IP (reached via the in-VPC local
+  route). Anything that is not proxy-aware simply has no egress — the allowlist
+  cannot be bypassed by ignoring an env var.
+- **Squid hardening:** explicit `dstdomain` allowlist ACL; `http_access deny all`
+  tail rule (default-deny); `CONNECT` permitted only to 443; HTTP (80) only to the
+  package/OS mirrors that genuinely need it; caching disabled (`cache deny all` — no
+  traffic data at rest); runs as the unprivileged `squid` user; **no public IP**;
+  security group accepts 3128 only from the app subnet CIDR; `access.log` shipped to
+  CloudWatch.
+- **NAT Gateway** sits behind the proxy (proxy subnet → NAT → IGW), so even the proxy
+  has no public IP. The operator explicitly asked for NAT (managed, no public IP on
+  any instance) over a cheaper NAT-instance.
+- **AWS Network Firewall is retained as an optional module**, gated by
+  `enable_network_firewall` (default `false`). When enabled, the network module
+  reroutes app subnets through the firewall endpoint. This keeps the AWS-native
+  artifact available on demand for a client demo without billing 24/7.
+
+**Why the proxy destination check is sound.** Squid dials the `CONNECT` target host
+itself and resolves it via VPC DNS, so a client cannot reach `evil.com` by lying in
+an SNI field — the destination is the CONNECT host, allowlisted by `dstdomain`. The
+residual is the same class NFW carries (a permitted domain that is itself malicious),
+plus reliance on VPC DNS integrity. Documented in the threat model (TB4).
+
+**AWS service reachability.** The app instances reach SSM, Secrets Manager, and
+CloudWatch Logs *through the proxy*, so the allowlist includes the regional AWS
+service endpoints (`ssm`, `ssmmessages`, `ec2messages`, `secretsmanager`, `logs`,
+`s3`) alongside the provider/registry/mirror domains. `NO_PROXY` covers IMDS
+(`169.254.169.254`), localhost, and the VPC CIDR so instance-role creds and intra-VPC
+traffic never traverse the proxy. (VPC interface endpoints were considered but add
+~$7/mo each × ~5 ≈ $35/mo — rejected on cost vs. routing those few domains through
+the proxy we are already running.)
+
+**Cost.** Egress infra ≈ NAT (~$33/mo) + Squid t3.micro (~$8/mo) ≈ **$41/mo** vs.
+~$288/mo for NFW. Total lab ≈ **$75–85/month at idle**, inside the ceiling.
+
+**Alternatives.** (a) NFW default-on — rejected on cost (this ADR). (b) NFW
+default-off toggle — leaves egress unfiltered when off, a documented gap; rejected in
+favor of an always-on control. (c) Squid in a public subnet with a public IP and no
+NAT (~$8/mo total) — cheaper, but the operator asked for NAT and no-public-IP is the
+stronger posture; rejected on the security-vs-$33 tradeoff. (d) NAT instance instead
+of NAT Gateway — ~$4/mo but operator-managed; rejected for the managed service.
+
+**Consequences.**
+- Maps to the same controls ADR-004 cited — **SC-7, AC-4, SI-4** — via a host-based
+  allowlisting proxy rather than a managed boundary appliance. The assessor-facing
+  evidence shifts from "AWS-managed firewall logs" to "proxy access logs + a
+  routing topology that forces all egress through the allowlist." Both are
+  defensible; the routing topology is the load-bearing part.
+- Docker daemon, the SSM agent, and the AWS CLI on the app hosts must be
+  proxy-configured (user-data sets `/etc/environment`, a Docker systemd drop-in, and
+  the SSM agent proxy). **Phase 2 compose files must propagate `HTTP(S)_PROXY` /
+  `NO_PROXY` into the containers** that make outbound calls (LiteLLM → providers, MCP
+  → SAM.gov). Tracked as a Phase 2 dependency.
+- The allowlist is a Terraform variable (`egress_allowlist_domains`) — reviewable and
+  diff-able, same property ADR-004 wanted.
+- Phase 2 Cloudflare Gateway upgrade path (docs/phase2.md) is unchanged.

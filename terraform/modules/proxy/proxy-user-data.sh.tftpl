@@ -1,0 +1,86 @@
+#!/bin/bash
+# =============================================================================
+# Squid egress allowlist proxy bootstrap (ADR-009)
+# Rendered by Terraform templatefile(). Shell vars are escaped as $${VAR}.
+# =============================================================================
+set -euxo pipefail
+
+dnf -y update
+dnf -y install squid amazon-cloudwatch-agent
+
+# ---- allowlist (one dstdomain per line; leading-dot = domain + subdomains) ---
+install -d -m 0755 /etc/squid
+cat > /etc/squid/allowlist.txt <<'ALLOWLIST'
+${allowlist}
+ALLOWLIST
+
+# ---- hardened squid.conf: explicit allow, default-deny, no caching ----------
+cat > /etc/squid/squid.conf <<'SQUIDCONF'
+# Zero Trust AI Lab egress proxy — default-deny domain allowlist (ADR-009)
+
+acl SSL_ports port 443
+acl Safe_ports port 80
+acl Safe_ports port 443
+acl CONNECT method CONNECT
+acl allowed_domains dstdomain "/etc/squid/allowlist.txt"
+
+# Never tunnel to non-standard ports
+http_access deny !Safe_ports
+http_access deny CONNECT !SSL_ports
+
+# Allow only allowlisted destinations; deny everything else
+http_access allow allowed_domains
+http_access deny all
+
+http_port 3128
+
+# No caching — no proxied traffic stored at rest
+cache deny all
+
+# Reduce fingerprint / strip forwarding headers
+httpd_suppress_version_string on
+via off
+forwarded_for delete
+
+# Logging (access.log is tailed to CloudWatch)
+access_log stdio:/var/log/squid/access.log squid
+cache_log /var/log/squid/cache.log
+dns_v4_first on
+SQUIDCONF
+
+# Validate config before (re)starting; fail the boot loudly if invalid
+squid -k parse
+
+systemctl enable squid
+systemctl restart squid
+
+# ---- CloudWatch agent: ship squid access.log -------------------------------
+cat > /opt/aws/amazon-cloudwatch-agent/etc/config.json <<'CWAGENT'
+{
+  "agent": { "run_as_user": "root" },
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/log/squid/access.log",
+            "log_group_name": "${log_group_name}",
+            "log_stream_name": "{instance_id}/squid-access"
+          },
+          {
+            "file_path": "/var/log/squid/cache.log",
+            "log_group_name": "${log_group_name}",
+            "log_stream_name": "{instance_id}/squid-cache"
+          }
+        ]
+      }
+    }
+  }
+}
+CWAGENT
+
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+  -a fetch-config -m ec2 -s \
+  -c file:/opt/aws/amazon-cloudwatch-agent/etc/config.json
+
+echo "ai-lab squid proxy bootstrap complete"

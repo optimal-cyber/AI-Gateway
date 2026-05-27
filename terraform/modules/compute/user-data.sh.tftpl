@@ -1,0 +1,104 @@
+#!/bin/bash
+# =============================================================================
+# App host bootstrap (chat-host / gateway-host)
+# Rendered by Terraform templatefile(). Shell vars are escaped (doubled dollar);
+# single-dollar braces are Terraform interpolations and if/endif are directives.
+# =============================================================================
+set -euxo pipefail
+
+ROLE="${role}"
+
+%{ if proxy_ip != "" ~}
+# ---- egress via Squid proxy (ADR-009): app hosts have no other route out -----
+PROXY="http://${proxy_ip}:3128"
+NO_PROXY_LIST="169.254.169.254,localhost,127.0.0.1,${no_proxy_cidr}"
+
+# System-wide proxy env (IMDS stays NO_PROXY so the instance role still works)
+cat >> /etc/environment <<EOF
+http_proxy=$${PROXY}
+https_proxy=$${PROXY}
+HTTP_PROXY=$${PROXY}
+HTTPS_PROXY=$${PROXY}
+no_proxy=$${NO_PROXY_LIST}
+NO_PROXY=$${NO_PROXY_LIST}
+EOF
+export http_proxy="$${PROXY}" https_proxy="$${PROXY}" no_proxy="$${NO_PROXY_LIST}"
+export HTTP_PROXY="$${PROXY}" HTTPS_PROXY="$${PROXY}" NO_PROXY="$${NO_PROXY_LIST}"
+
+# The proxy boots in parallel — wait for it to accept connections.
+for i in $(seq 1 60); do
+  if timeout 2 bash -c "echo > /dev/tcp/${proxy_ip}/3128" 2>/dev/null; then
+    echo "proxy reachable after attempt $i"; break
+  fi
+  echo "waiting for squid proxy ($i/60)"; sleep 5
+done
+
+# dnf through the proxy
+echo "proxy=$${PROXY}" >> /etc/dnf/dnf.conf
+
+# SSM agent through the proxy (required for Session Manager — the only shell)
+install -d /etc/systemd/system/amazon-ssm-agent.service.d
+cat > /etc/systemd/system/amazon-ssm-agent.service.d/proxy.conf <<EOF
+[Service]
+Environment="http_proxy=$${PROXY}"
+Environment="https_proxy=$${PROXY}"
+Environment="no_proxy=$${NO_PROXY_LIST}"
+EOF
+systemctl daemon-reload
+systemctl restart amazon-ssm-agent
+%{ endif ~}
+
+# ---- base packages (AWS CLI + SSM agent are preinstalled on AL2023) ---------
+dnf -y update
+dnf -y install docker amazon-cloudwatch-agent
+
+# ---- Docker Compose v2 plugin (release binary via proxy) --------------------
+install -d /usr/libexec/docker/cli-plugins
+curl -fsSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 \
+  -o /usr/libexec/docker/cli-plugins/docker-compose
+chmod +x /usr/libexec/docker/cli-plugins/docker-compose
+
+# ---- cloudflared (Cloudflare rpm repo) --------------------------------------
+curl -fsSL https://pkg.cloudflare.com/cloudflared-ascii.repo -o /etc/yum.repos.d/cloudflared.repo
+dnf -y install cloudflared
+
+# ---- Docker daemon proxy so image pulls (ghcr/docker.io) use the allowlist --
+%{ if proxy_ip != "" ~}
+install -d /etc/systemd/system/docker.service.d
+cat > /etc/systemd/system/docker.service.d/proxy.conf <<EOF
+[Service]
+Environment="HTTP_PROXY=$${PROXY}"
+Environment="HTTPS_PROXY=$${PROXY}"
+Environment="NO_PROXY=$${NO_PROXY_LIST}"
+EOF
+%{ endif ~}
+systemctl daemon-reload
+systemctl enable --now docker
+
+# Compose dir for Phase 2 stacks; the secrets-bootstrap systemd unit lands here.
+install -d -m 0755 /opt/ai-lab/compose
+
+# ---- CloudWatch agent: ship /var/log/messages -------------------------------
+cat > /opt/aws/amazon-cloudwatch-agent/etc/config.json <<EOF
+{
+  "agent": { "run_as_user": "root" },
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/log/messages",
+            "log_group_name": "${log_group_name}",
+            "log_stream_name": "{instance_id}/$${ROLE}-messages"
+          }
+        ]
+      }
+    }
+  }
+}
+EOF
+/opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
+  -a fetch-config -m ec2 -s \
+  -c file:/opt/aws/amazon-cloudwatch-agent/etc/config.json
+
+echo "ai-lab $${ROLE} bootstrap complete"

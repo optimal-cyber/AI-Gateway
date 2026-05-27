@@ -25,7 +25,7 @@ notes) lands in **Phase 6**.
 | Phase | Scope | State |
 |---|---|---|
 | 0 | Scaffolding, ADRs, threat model, `.gitignore` | ✅ done |
-| 1 | Terraform AWS baseline (VPC, NFW, EC2, secrets, logging) | ⬜ |
+| 1 | Terraform AWS baseline (VPC, Squid egress, EC2, secrets, logging) | ✅ fmt+validate clean |
 | 1.5 | Identity plane — Okta + Cloudflare Access SSO | ⬜ |
 | 2 | Docker Compose stacks (Open WebUI, LiteLLM, NeMo) | ⬜ |
 | 3 | Compliance MCP server (the differentiator) | ⬜ |
@@ -75,5 +75,16 @@ Docker + Compose, Python 3.11+, `wrangler` (Pages), `dig`.
 
 ## Cost
 
-Target: **~$80–100/month at idle**, single-AZ, t3.small, gp3. AWS Network Firewall is
-the largest line item (see [ADR-004](docs/decisions.md)). Full breakdown in Phase 6.
+Target: **~$75–85/month at idle**, single-AZ, t3.small, gp3. Egress is filtered by a
+hardened Squid allowlist proxy (~$41/mo for NAT + a t3.micro) rather than AWS Network
+Firewall (~$288/mo), which is retained as an optional `egress_mode = "networkfirewall"`
+module — see [ADR-009](docs/decisions.md). Full breakdown in Phase 6.
+
+| Line item | ~$/mo |
+|---|---|
+| NAT Gateway (hourly + minimal data) | ~33 |
+| 2× t3.small app hosts | ~30 |
+| t3.micro Squid proxy | ~8 |
+| gp3 EBS (3 vols) + CloudWatch + Secrets | ~5–10 |
+| **Total (egress_mode = proxy)** | **~75–85** |
+| *Alt: egress_mode = networkfirewall* | *+~255* |

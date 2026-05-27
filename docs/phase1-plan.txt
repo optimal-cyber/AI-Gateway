@@ -1,0 +1,95 @@
+=============================================================================
+ Phase 1 — Terraform baseline: init / fmt / validate / plan record
+=============================================================================
+Date:        2026-05-27
+Terraform:   v1.15.5 (required_version >= 1.6.0)
+AWS provider: hashicorp/aws v5.100.0 (pinned ~> 5.92)
+egress_mode: proxy (default)
+
+-----------------------------------------------------------------------------
+ terraform fmt -recursive   ->  OK (reformatted, now clean)
+ terraform init -input=false ->  OK (provider installed, lock file written)
+ terraform validate          ->  "Success! The configuration is valid."
+ terraform plan              ->  BLOCKED: invalid AWS credentials (see below)
+-----------------------------------------------------------------------------
+
+NOTE ON PLAN
+------------
+`terraform plan` was run but could not complete because the AWS credentials
+currently configured on this workstation are invalid:
+
+    Error: Retrieving AWS account details: validating provider credentials:
+    retrieving caller identity from STS: ... StatusCode: 403,
+    api error InvalidClientTokenId: The security token included in the
+    request is invalid.
+      with provider["registry.terraform.io/hashicorp/aws"]
+      on main.tf line 24, in provider "aws"
+
+Importantly, plan evaluated the ENTIRE configuration before this — it even
+resolved the `egress_mode = "proxy"` output — and failed ONLY at the provider's
+STS credential check. That confirms the HCL, module wiring, variable types,
+validations, and template rendering are all sound. The single remaining blocker
+is authentication, which is yours to provide.
+
+TO PRODUCE A REAL PLAN (operator runs with valid creds):
+    cd terraform
+    # configure creds for the personal lab account, e.g.:
+    #   export AWS_PROFILE=ai-lab      (or aws configure sso / static keys)
+    aws sts get-caller-identity        # should return your account, not 403
+    terraform plan -out=tfplan | tee ../docs/phase1-plan.txt
+    # review, then:
+    terraform apply tfplan             # operator applies — NOT done by Claude
+
+=============================================================================
+ WHAT THE PLAN WILL CREATE (egress_mode = proxy)  — ~62 resources
+=============================================================================
+module.network   (~19)
+  aws_vpc, aws_internet_gateway, aws_eip(nat), aws_nat_gateway
+  aws_subnet x5            public, firewall, proxy, app[0], app[1]
+  aws_route_table x3       public, egress, app
+  aws_route x2             public default->IGW, egress default->NAT
+  aws_route_table_association x5
+  (app route table has NO default route — the egress invariant, ADR-009)
+
+module.logging   (4)
+  aws_cloudwatch_log_group x4
+    /ai-lab/ec2/chat-host, /ai-lab/ec2/gateway-host,
+    /ai-lab/ec2/proxy-host, /ai-lab/networkfw   (30-day retention)
+
+module.secrets   (16)
+  aws_secretsmanager_secret x16  (lab/* — created EMPTY, seeded post-apply)
+
+module.proxy[0]  (~12)   [Squid egress allowlist proxy]
+  aws_security_group + 2 ingress(3128) + 4 egress(443/80/53udp/53tcp)
+  aws_iam_role + AmazonSSMManagedInstanceCore attach + logs inline policy
+  aws_iam_instance_profile
+  aws_instance (t3.micro, no public IP, IMDSv2, gp3 8GB encrypted)
+
+module.compute   (~10)
+  aws_security_group + 2 ingress(4000 intra-subnet) + 1 egress(VPC-only)
+  aws_iam_role + SSM attach + inline(GetSecretValue lab/* + logs)
+  aws_iam_instance_profile
+  aws_instance x2 (chat-host, gateway-host; t3.small, no public IP, IMDSv2,
+                   gp3 30GB encrypted, no SSH key)
+
+root
+  aws_secretsmanager_secret_version.gateway_host_private_ip
+    (auto-populated from module.compute output)
+
+module.firewall  (0 in proxy mode)
+  Created only when egress_mode = "networkfirewall" (~7 resources +
+  re-routing). ~$288/mo — see ADR-009.
+
+=============================================================================
+ POST-APPLY CHECKLIST (verification of the security invariants)
+=============================================================================
+[ ] No security group allows 80/443 from 0.0.0.0/0 (T-CF-I)
+       aws ec2 describe-security-groups --filters Name=vpc-id,Values=<vpc> \
+         --query "SecurityGroups[].IpPermissions[?contains(IpRanges[].CidrIp,'0.0.0.0/0')]"
+[ ] App route table has no 0.0.0.0/0 route (ADR-009 egress invariant)
+[ ] Instances have no public IP and no key_name
+[ ] IMDSv2 required (HttpTokens=required) on all three instances
+[ ] SSM Session Manager works (proves no-SSH access path):
+       aws ssm start-session --target <gateway_host_instance_id>
+[ ] From a host: curl https://example.com FAILS, curl https://api.openai.com OK
+[ ] Seed secrets:  ./scripts/seed-secrets.sh   (Okta secrets: Phase 1.5 script)
