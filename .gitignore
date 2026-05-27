@@ -1,0 +1,55 @@
+# ---- Terraform ----
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+# tfvars carry real values — only the *.example is tracked
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+
+# ---- Secrets / env ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+# cloudflared tunnel credentials
+*.json.cloudflared
+cert.pem
+[0-9a-f]*-[0-9a-f]*.json
+/run/ai-lab/
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+
+# ---- Node ----
+node_modules/
+dist/
+.wrangler/
+
+# ---- Local data stores (seeded from SQL, not committed) ----
+mcp-server/data/poams.db
+
+# ---- OS / editor ----
+.DS_Store
+*.swp
+.idea/
+.vscode/
