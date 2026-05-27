@@ -1,0 +1,73 @@
+# =============================================================================
+# LiteLLM proxy config — AI lab gateway
+# =============================================================================
+# Verify model strings / SSO env names against the LiteLLM version you deploy
+# (ghcr.io/berriai/litellm:main-stable). Outbound calls to providers go THROUGH
+# the Squid proxy — HTTP(S)_PROXY/NO_PROXY are set on the container in compose
+# (ADR-009 Phase 2 dependency).
+# =============================================================================
+
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: claude-opus-4-7
+    litellm_params:
+      model: anthropic/claude-opus-4-7
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: claude-sonnet-4-6
+    litellm_params:
+      model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+# --- Guardrails: NeMo as a DaaS hook on input (pre) and output (post) --------
+# Both point at the same custom class (../nemo_guardrail.py, mounted + on
+# PYTHONPATH); it calls the NeMo DaaS service and FAILS CLOSED if unreachable.
+guardrails:
+  - guardrail_name: "nemo-input"
+    litellm_params:
+      guardrail: nemo_guardrail.NemoDaaSGuardrail
+      mode: "pre_call"
+      default_on: true
+  - guardrail_name: "nemo-output"
+    litellm_params:
+      guardrail: nemo_guardrail.NemoDaaSGuardrail
+      mode: "post_call"
+      default_on: true
+
+# --- MCP servers: the compliance MCP over streamable HTTP (Phase 3) ----------
+mcp_servers:
+  compliance:
+    url: "http://compliance-mcp:8000/mcp"
+    transport: "http"
+    description: "Read-only compliance tools: SAM.gov, NIST 800-53, POA&Ms, CMMC L2"
+
+# --- general settings --------------------------------------------------------
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  store_model_in_db: true
+  # Lock the admin UI to admins. Network reachability is already gated by
+  # Cloudflare Access (lab-admins + MFA + WARP + US); the Okta LiteLLM app is
+  # assigned to lab-admins ONLY, so non-admins cannot complete the OIDC login.
+  ui_access_mode: "admin_only"
+
+litellm_settings:
+  drop_params: true
+  # Anyone who somehow reaches the UI without being promoted defaults to a
+  # zero-budget, no-model viewer (spec requirement).
+  default_internal_user_params:
+    max_budget: 0.0
+    models: []
+    user_role: "internal_user_viewer"
+
+# --- SSO / role mapping ------------------------------------------------------
+# Okta OIDC env (GENERIC_*) is set on the container in compose. Role mapping:
+#   * Okta 'AI Lab — LiteLLM Admin' app is assigned to group `lab-admins` ONLY,
+#     so only admins can authenticate at all (docs/okta-setup.md §4).
+#   * GENERIC_USER_ROLE_JWT_FIELD=groups exposes the groups claim; map
+#     `lab-admins` -> proxy_admin in the LiteLLM UI / via env on first login.
+#   * Everyone else -> internal_user_viewer (above).
+# This is the defense-in-depth layer behind Cloudflare Access (ADR-007).

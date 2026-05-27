@@ -1,0 +1,24 @@
+# NeMo Guardrails config — AI lab DaaS (ADR-003)
+# Only INPUT and OUTPUT rails are used (the server calls generate with
+# options={"rails": ["input"|"output"]} — no main LLM generation). The rails
+# invoke deterministic custom actions backed by detectors.py.
+
+# A main model is declared for completeness but the deterministic rails never
+# invoke it (rails-only mode). It is therefore never actually called; the
+# OPENAI_API_KEY on the gateway host satisfies init without a network call.
+models:
+  - type: main
+    engine: openai
+    model: gpt-4o-mini
+
+rails:
+  input:
+    flows:
+      - guardrail check input
+  output:
+    flows:
+      - guardrail check output
+    streaming:
+      enabled: false
+
+# Keep dialog/generation rails off — this is a pure detection service.

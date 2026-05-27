@@ -112,11 +112,21 @@ resource "aws_route_table_association" "firewall" {
   route_table_id = aws_route_table.egress.id
 }
 
-# app: local-only. NO default route here on purpose (ADR-009 egress invariant).
-# In networkfirewall mode, the firewall module adds 0.0.0.0/0 -> firewall endpoint.
+# app route table. In proxy mode it gets a default route to NAT, but the app
+# security group blocks direct 80/443 egress — so HTTP/HTTPS can ONLY leave via
+# the Squid proxy (3128), while cloudflared's tunnel (udp/tcp 7844) is the one
+# protocol allowed straight out (cloudflared cannot use an HTTP proxy; ADR-009).
+# In networkfirewall mode the firewall module instead adds 0.0.0.0/0 -> endpoint.
 resource "aws_route_table" "app" {
   vpc_id = aws_vpc.this.id
   tags   = { Name = "${var.project_name}-rt-app" }
+}
+
+resource "aws_route" "app_default" {
+  count                  = var.egress_mode == "proxy" ? 1 : 0
+  route_table_id         = aws_route_table.app.id
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = aws_nat_gateway.this.id
 }
 
 resource "aws_route_table_association" "app" {

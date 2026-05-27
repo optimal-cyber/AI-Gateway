@@ -1,0 +1,118 @@
+# =============================================================================
+# gateway-host stack (EC2 #2): LiteLLM + Postgres + NeMo Guardrails + MCP + cloudflared
+# =============================================================================
+# .env is provided by secrets-bootstrap.sh (tmpfs, role=gateway) and symlinked here.
+# Build contexts assume the repo is present on the host (compose run from
+# <repo>/docker/gateway-host, so ../../mcp-server resolves). See docs/deploy.md.
+# =============================================================================
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: "litellm"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+      POSTGRES_DB: "litellm"
+    volumes:
+      - litellm-pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nemo-guardrails:
+    build: ./nemo
+    restart: unless-stopped
+    environment:
+      # Present for NeMo init only; the deterministic rails never call out.
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      NEMO_DECISION_LOG: "/var/log/nemo/decisions.log"
+    volumes:
+      - nemo-logs:/var/log/nemo
+    healthcheck:
+      test: ["CMD", "python", "server.py", "--health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+  compliance-mcp:
+    build:
+      context: ../../mcp-server
+    restart: unless-stopped
+    environment:
+      SAM_GOV_API_KEY: "${SAM_GOV_API_KEY}"
+      MCP_TRANSPORT: "http"
+      # MCP egresses to api.sam.gov via the Squid allowlist proxy.
+      HTTP_PROXY: "${HTTP_PROXY:-}"
+      HTTPS_PROXY: "${HTTPS_PROXY:-}"
+      NO_PROXY: "${NO_PROXY:-}"
+    healthcheck:
+      test: ["CMD", "python", "-m", "src.server", "--health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    restart: unless-stopped
+    # Bound to 0.0.0.0:4000 — reachable from the chat host within the private
+    # subnet (app SG allows 4000 intra-subnet only; never from the internet).
+    ports:
+      - "4000:4000"
+    command: ["--config", "/app/config.yaml", "--host", "0.0.0.0", "--port", "4000"]
+    environment:
+      LITELLM_MASTER_KEY: "${LITELLM_MASTER_KEY}"
+      LITELLM_SALT_KEY: "${LITELLM_SALT_KEY}"
+      DATABASE_URL: "${DATABASE_URL}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+      # NeMo DaaS endpoint for the custom guardrail (../nemo_guardrail.py)
+      NEMO_GUARDRAIL_URL: "http://nemo-guardrails:8000"
+      # so `guardrail: nemo_guardrail.NemoDaaSGuardrail` is importable
+      PYTHONPATH: "/app"
+      # Okta admin OIDC (direct — ADR-007)
+      PROXY_BASE_URL: "${PROXY_BASE_URL}"
+      GENERIC_CLIENT_ID: "${GENERIC_CLIENT_ID}"
+      GENERIC_CLIENT_SECRET: "${GENERIC_CLIENT_SECRET}"
+      GENERIC_AUTHORIZATION_ENDPOINT: "${GENERIC_AUTHORIZATION_ENDPOINT}"
+      GENERIC_TOKEN_ENDPOINT: "${GENERIC_TOKEN_ENDPOINT}"
+      GENERIC_USERINFO_ENDPOINT: "${GENERIC_USERINFO_ENDPOINT}"
+      GENERIC_INCLUDE_CLIENT_ID: "${GENERIC_INCLUDE_CLIENT_ID}"
+      GENERIC_SCOPE: "${GENERIC_SCOPE}"
+      GENERIC_USER_ROLE_JWT_FIELD: "${GENERIC_USER_ROLE_JWT_FIELD}"
+      # Provider egress via the Squid allowlist proxy (ADR-009). NO_PROXY keeps
+      # intra-VPC service-to-service traffic (postgres, nemo, mcp) off the proxy.
+      HTTP_PROXY: "${HTTP_PROXY:-}"
+      HTTPS_PROXY: "${HTTPS_PROXY:-}"
+      NO_PROXY: "${NO_PROXY:-},postgres,nemo-guardrails,compliance-mcp,localhost,127.0.0.1"
+    volumes:
+      - ./litellm-config.yaml:/app/config.yaml:ro
+      - ./nemo_guardrail.py:/app/nemo_guardrail.py:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nemo-guardrails:
+        condition: service_healthy
+      compliance-mcp:
+        condition: service_healthy
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: "${CLOUDFLARE_TUNNEL_TOKEN}"
+      HTTPS_PROXY: "${HTTPS_PROXY:-}"
+      HTTP_PROXY: "${HTTP_PROXY:-}"
+      NO_PROXY: "${NO_PROXY:-}"
+    depends_on:
+      litellm:
+        condition: service_started
+
+volumes:
+  litellm-pg:
+  nemo-logs:

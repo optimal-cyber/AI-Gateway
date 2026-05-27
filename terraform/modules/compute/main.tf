@@ -40,13 +40,35 @@ resource "aws_vpc_security_group_ingress_rule" "litellm_4000" {
   ip_protocol       = "tcp"
 }
 
-# Egress to the VPC only (reaches proxy:3128, gateway:4000, VPC DNS). No
-# 0.0.0.0/0 egress — the hosts have no internet route anyway (ADR-009).
+# Intra-VPC egress is open (reaches proxy:3128, gateway:4000, VPC DNS).
 resource "aws_vpc_security_group_egress_rule" "to_vpc" {
   security_group_id = aws_security_group.app.id
-  description       = "All intra-VPC egress (proxy, gateway, DNS)"
+  description       = "All intra-VPC egress (proxy 3128, gateway 4000, DNS)"
   cidr_ipv4         = var.no_proxy_cidr
   ip_protocol       = "-1"
+}
+
+# The ONLY direct-to-internet egress: cloudflared tunnel (port 7844). cloudflared
+# cannot use an HTTP proxy, so its QUIC/HTTP2 transport goes straight to the
+# Cloudflare edge. Crucially, 80/443 are NOT opened to the internet here, so all
+# HTTP/HTTPS egress is forced through the Squid allowlist proxy (ADR-009).
+# Hardening TODO: scope these to Cloudflare's published edge IP ranges.
+resource "aws_vpc_security_group_egress_rule" "cloudflared_quic" {
+  security_group_id = aws_security_group.app.id
+  description       = "cloudflared tunnel (QUIC) to Cloudflare edge"
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = 7844
+  to_port           = 7844
+  ip_protocol       = "udp"
+}
+
+resource "aws_vpc_security_group_egress_rule" "cloudflared_http2" {
+  security_group_id = aws_security_group.app.id
+  description       = "cloudflared tunnel (HTTP2 fallback) to Cloudflare edge"
+  cidr_ipv4         = "0.0.0.0/0"
+  from_port         = 7844
+  to_port           = 7844
+  ip_protocol       = "tcp"
 }
 
 # ---- IAM --------------------------------------------------------------------

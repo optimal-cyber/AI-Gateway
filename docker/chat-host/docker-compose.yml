@@ -1,0 +1,62 @@
+# =============================================================================
+# chat-host stack (EC2 #1): Open WebUI + cloudflared
+# =============================================================================
+# .env is provided by secrets-bootstrap.sh (tmpfs, role=chat) and symlinked here.
+# Run via the ai-lab-stack@chat systemd unit (after the secrets unit).
+# =============================================================================
+
+services:
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    restart: unless-stopped
+    # ---------------------------------------------------------------------
+    # LOAD-BEARING SECURITY BOUNDARY (ADR-007 / threat T-CHAT-S):
+    # Bind to 127.0.0.1 ONLY. Trusted-header SSO means anything that can reach
+    # this port can forge Cf-Access-Authenticated-User-Email and become any
+    # user. Only cloudflared (same host, same docker network) must reach it.
+    # DO NOT change to 0.0.0.0, DO NOT add a host-published port, DO NOT expose
+    # it to the app subnet. This single bind is the entire boundary for this app.
+    # ---------------------------------------------------------------------
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      WEBUI_AUTH: "true"
+      WEBUI_AUTH_TRUSTED_EMAIL_HEADER: "Cf-Access-Authenticated-User-Email"
+      WEBUI_AUTH_TRUSTED_NAME_HEADER: "Cf-Access-Authenticated-User-Name"
+      ENABLE_SIGNUP: "false"
+      DEFAULT_USER_ROLE: "user"
+      # Forward the resolved user identity downstream so LiteLLM can attribute
+      # the request to the email (audit-trail story, sso-role-mapping.md).
+      ENABLE_FORWARD_USER_INFO_HEADERS: "true"
+      WEBUI_SECRET_KEY: "${WEBUI_SECRET_KEY}"
+      # Talk to the LiteLLM gateway on EC2 #2 using a LiteLLM virtual key
+      # (NOT a provider key — the provider keys never leave the gateway host).
+      OPENAI_API_BASE_URL: "http://${LITELLM_HOST_IP}:4000/v1"
+      OPENAI_API_KEY: "${LITELLM_VIRTUAL_KEY_WEBUI}"
+    volumes:
+      - open-webui-data:/app/backend/data
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: "${CLOUDFLARE_TUNNEL_TOKEN}"
+      # Tunnel data plane uses port 7844 direct (SG-allowed). Control-plane HTTP
+      # calls (api.cloudflare.com) go through the Squid allowlist proxy.
+      HTTPS_PROXY: "${HTTPS_PROXY:-}"
+      HTTP_PROXY: "${HTTP_PROXY:-}"
+      NO_PROXY: "${NO_PROXY:-}"
+    depends_on:
+      open-webui:
+        condition: service_healthy
+
+volumes:
+  open-webui-data:

@@ -1,0 +1,22 @@
+# Colang 1.0 flows for the AI-lab guardrail (ADR-003).
+# The custom actions detect_input / detect_output are registered in server.py
+# and call detectors.py. A truthy result triggers a refusal and stops the rail,
+# which the server records via activated_rails.
+
+define bot refuse input
+  "I can't help with that — your message was blocked by the AI-lab guardrail."
+
+define bot refuse output
+  "The response was withheld by the AI-lab guardrail."
+
+define flow guardrail check input
+  $blocked = execute detect_input(text=$user_message)
+  if $blocked
+    bot refuse input
+    stop
+
+define flow guardrail check output
+  $blocked = execute detect_output(text=$bot_message)
+  if $blocked
+    bot refuse output
+    stop

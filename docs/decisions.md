@@ -296,10 +296,18 @@ egress — without the managed-service price.
 a `dstdomain` allowlist, behind a **NAT Gateway**. Enforcement is structural, not
 opt-in:
 
-- **App subnets have no `0.0.0.0/0` route** (route table is `local`-only). The sole
-  path to the internet is the Squid proxy's private IP (reached via the in-VPC local
-  route). Anything that is not proxy-aware simply has no egress — the allowlist
-  cannot be bypassed by ignoring an env var.
+- **No direct HTTP/HTTPS egress from the app hosts.** The app security group permits
+  outbound only: all intra-VPC traffic (proxy 3128, gateway 4000, VPC DNS) plus
+  **cloudflared's tunnel port 7844** straight to the Cloudflare edge. Ports 80/443
+  are **not** opened to the internet, so every HTTP/HTTPS call is forced through the
+  Squid allowlist — the allowlist cannot be bypassed by ignoring a proxy env var,
+  because the SG drops the packets.
+  *(Amendment 2026-05-27: the first cut gave the app subnet no default route at all,
+  but cloudflared connects to the edge over QUIC/HTTP2 on udp/tcp 7844 and cannot use
+  an HTTP CONNECT proxy — the tunnel could never establish. The app subnet now has a
+  NAT default route in proxy mode; the SG, not the absence of a route, is what forces
+  HTTP/HTTPS through the proxy. The 7844 rule is `0.0.0.0/0` today; hardening TODO is
+  to scope it to Cloudflare's edge IP ranges.)*
 - **Squid hardening:** explicit `dstdomain` allowlist ACL; `http_access deny all`
   tail rule (default-deny); `CONNECT` permitted only to 443; HTTP (80) only to the
   package/OS mirrors that genuinely need it; caching disabled (`cache deny all` — no
