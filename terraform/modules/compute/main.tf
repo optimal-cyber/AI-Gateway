@@ -50,6 +50,8 @@ resource "aws_vpc_security_group_egress_rule" "to_vpc" {
 }
 
 # ---- IAM --------------------------------------------------------------------
+data "aws_caller_identity" "current" {}
+
 data "aws_iam_policy_document" "assume" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -76,17 +78,17 @@ data "aws_iam_policy_document" "app_inline" {
   statement {
     sid       = "ReadLabSecrets"
     actions   = ["secretsmanager:GetSecretValue", "secretsmanager:DescribeSecret"]
-    resources = ["arn:aws:secretsmanager:*:*:secret:lab/*"]
+    resources = ["arn:aws:secretsmanager:${var.region}:${data.aws_caller_identity.current.account_id}:secret:lab/*"]
   }
 
   statement {
     sid     = "ShipLogs"
     actions = ["logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogStreams"]
     resources = [
-      "arn:aws:logs:${var.region}:*:log-group:${var.chat_log_group}",
-      "arn:aws:logs:${var.region}:*:log-group:${var.chat_log_group}:*",
-      "arn:aws:logs:${var.region}:*:log-group:${var.gateway_log_group}",
-      "arn:aws:logs:${var.region}:*:log-group:${var.gateway_log_group}:*",
+      "arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:log-group:${var.chat_log_group}",
+      "arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:log-group:${var.chat_log_group}:*",
+      "arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:log-group:${var.gateway_log_group}",
+      "arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:log-group:${var.gateway_log_group}:*",
     ]
   }
 }

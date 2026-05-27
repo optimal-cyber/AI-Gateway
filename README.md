@@ -26,7 +26,7 @@ notes) lands in **Phase 6**.
 |---|---|---|
 | 0 | Scaffolding, ADRs, threat model, `.gitignore` | ✅ done |
 | 1 | Terraform AWS baseline (VPC, Squid egress, EC2, secrets, logging) | ✅ fmt+validate clean |
-| 1.5 | Identity plane — Okta + Cloudflare Access SSO | ⬜ |
+| 1.5 | Identity plane — Okta + Cloudflare Access SSO | ✅ runbooks + TF + scripts |
 | 2 | Docker Compose stacks (Open WebUI, LiteLLM, NeMo) | ⬜ |
 | 3 | Compliance MCP server (the differentiator) | ⬜ |
 | 4 | Cloudflare config (tunnels, Access apps, Gateway, DNS) | ⬜ |

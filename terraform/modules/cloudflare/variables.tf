@@ -1,16 +1,32 @@
-# cloudflare module variables — STUB (Phase 1.5 / Phase 4).
-# Uncomment when activating the module.
+# cloudflare module variables — uncomment with the module (Phase 4).
 #
 # variable "cloudflare_account_id" {
-#   type = string
-# }
-#
-# variable "cloudflare_zone_id" {
-#   description = "Zone ID for gooptimal.io (DNS stays in Google; this is only for Access app scoping)."
+#   description = "Cloudflare account ID (Zero Trust org)."
 #   type        = string
 # }
 #
-# variable "okta_team_name"            { type = string }
-# variable "okta_cf_client_id"         { type = string, sensitive = true }
-# variable "okta_cf_client_secret"     { type = string, sensitive = true }
-# variable "okta_tenant_url"           { type = string }
+# variable "okta_tenant_url" {
+#   description = "Okta tenant URL, e.g. https://dev-12345678.okta.com (lab/okta_tenant_url)."
+#   type        = string
+# }
+#
+# variable "okta_cf_client_id" {
+#   description = "Okta OIDC app (Cloudflare Access) client id (lab/okta_cf_client_id)."
+#   type        = string
+#   sensitive   = true
+# }
+#
+# variable "okta_cf_client_secret" {
+#   description = "Okta OIDC app (Cloudflare Access) client secret (lab/okta_cf_client_secret)."
+#   type        = string
+#   sensitive   = true
+# }
+#
+# variable "warp_posture_id" {
+#   description = "Device-posture integration UID for the WARP-healthy check (gateway app)."
+#   type        = string
+# }
+#
+# # Optional: pass the lab/* secret IDs to auto-store tunnel tokens.
+# variable "secret_id_tunnel_token_chat"    { type = string }
+# variable "secret_id_tunnel_token_gateway" { type = string }

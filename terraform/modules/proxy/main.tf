@@ -84,6 +84,8 @@ data "aws_vpc" "this" {
 }
 
 # ---- IAM (SSM + CloudWatch logs only) ---------------------------------------
+data "aws_caller_identity" "current" {}
+
 data "aws_iam_policy_document" "assume" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -111,8 +113,8 @@ data "aws_iam_policy_document" "proxy_logs" {
     sid     = "ShipSquidLogs"
     actions = ["logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogStreams"]
     resources = [
-      "arn:aws:logs:${var.region}:*:log-group:${var.log_group_name}",
-      "arn:aws:logs:${var.region}:*:log-group:${var.log_group_name}:*",
+      "arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:log-group:${var.log_group_name}",
+      "arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:log-group:${var.log_group_name}:*",
     ]
   }
 }
