@@ -19,6 +19,17 @@ set -euo pipefail
 : "${AI_LAB_COMPOSE:?set AI_LAB_COMPOSE=/path/to/compose/dir}"
 : "${AWS_DEFAULT_REGION:?set AWS_DEFAULT_REGION}"
 
+# Load HTTP(S)_PROXY/NO_PROXY from /etc/environment BEFORE the aws CLI runs.
+# The systemd unit launches us with a clean env, so without this the aws CLI
+# tries direct egress to secretsmanager.<region>.amazonaws.com and the app SG
+# drops the connection (no direct 443 to the internet — ADR-009).
+if [[ -f /etc/environment ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  . /etc/environment
+  set +a
+fi
+
 RUN_DIR="/run/ai-lab"
 ENV_FILE="${RUN_DIR}/${AI_LAB_ROLE}.env"
 
