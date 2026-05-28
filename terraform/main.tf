@@ -96,6 +96,12 @@ module "proxy" {
   app_subnet_cidrs         = var.app_subnet_cidrs
   egress_allowlist_domains = var.egress_allowlist_domains
   log_group_name           = module.logging.proxy_host_log_group_name
+
+  # The proxy instance's user-data installs squid via dnf, which needs NAT. TF
+  # otherwise launches the instance the moment the subnet exists (~14s) while
+  # NAT GW is still ~2 min from ready, so dnf fails silently and the rest of
+  # the script (config + start) never runs. Force the wait. (Caught at first deploy.)
+  depends_on = [module.network]
 }
 
 # -----------------------------------------------------------------------------
