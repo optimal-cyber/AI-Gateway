@@ -1,95 +1,1706 @@
 =============================================================================
- Phase 1 — Terraform baseline: init / fmt / validate / plan record
+ Phase 1 — Terraform plan (live, against account 317839577064)
 =============================================================================
-Date:        2026-05-27
-Terraform:   v1.15.5 (required_version >= 1.6.0)
-AWS provider: hashicorp/aws v5.100.0 (pinned ~> 5.92)
-egress_mode: proxy (default)
+Date:        2026-05-28
+Identity:    arn:aws:sts::317839577064:assumed-role/AWSReservedSSO_AdministratorAccess_3da343d077982bab/rgutwein
+Profile:     ai-lab (IAM Identity Center, sso_region=us-east-2, target region=us-east-1)
+Terraform:   v1.15.5
+AWS prov:    hashicorp/aws v5.100.0 (pinned ~> 5.92)
+egress_mode: proxy (default — ADR-009)
 
+Plan: 65 to add, 0 to change, 0 to destroy.
+Saved binary plan: terraform/tfplan  (apply with: terraform apply tfplan)
 -----------------------------------------------------------------------------
- terraform fmt -recursive   ->  OK (reformatted, now clean)
- terraform init -input=false ->  OK (provider installed, lock file written)
- terraform validate          ->  "Success! The configuration is valid."
- terraform plan              ->  BLOCKED: invalid AWS credentials (see below)
------------------------------------------------------------------------------
 
-NOTE ON PLAN
-------------
-`terraform plan` was run but could not complete because the AWS credentials
-currently configured on this workstation are invalid:
+module.compute.data.aws_caller_identity.current: Reading...
+data.aws_ssm_parameter.al2023_x86_64: Reading...
+module.proxy[0].data.aws_caller_identity.current: Reading...
+module.proxy[0].data.aws_iam_policy_document.assume: Reading...
+module.compute.data.aws_iam_policy_document.assume: Reading...
+module.compute.data.aws_iam_policy_document.assume: Read complete after 0s [id=2851119427]
+module.proxy[0].data.aws_iam_policy_document.assume: Read complete after 0s [id=2851119427]
+module.compute.data.aws_caller_identity.current: Read complete after 0s [id=317839577064]
+module.compute.data.aws_iam_policy_document.app_inline: Reading...
+module.compute.data.aws_iam_policy_document.app_inline: Read complete after 0s [id=1404783810]
+module.proxy[0].data.aws_caller_identity.current: Read complete after 0s [id=317839577064]
+module.proxy[0].data.aws_iam_policy_document.proxy_logs: Reading...
+module.proxy[0].data.aws_iam_policy_document.proxy_logs: Read complete after 0s [id=12185514]
+data.aws_ssm_parameter.al2023_x86_64: Read complete after 0s [id=/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64]
 
-    Error: Retrieving AWS account details: validating provider credentials:
-    retrieving caller identity from STS: ... StatusCode: 403,
-    api error InvalidClientTokenId: The security token included in the
-    request is invalid.
-      with provider["registry.terraform.io/hashicorp/aws"]
-      on main.tf line 24, in provider "aws"
+Terraform used the selected providers to generate the following execution
+plan. Resource actions are indicated with the following symbols:
+  + create
+ <= read (data resources)
 
-Importantly, plan evaluated the ENTIRE configuration before this — it even
-resolved the `egress_mode = "proxy"` output — and failed ONLY at the provider's
-STS credential check. That confirms the HCL, module wiring, variable types,
-validations, and template rendering are all sound. The single remaining blocker
-is authentication, which is yours to provide.
+Terraform will perform the following actions:
 
-TO PRODUCE A REAL PLAN (operator runs with valid creds):
-    cd terraform
-    # configure creds for the personal lab account, e.g.:
-    #   export AWS_PROFILE=ai-lab      (or aws configure sso / static keys)
-    aws sts get-caller-identity        # should return your account, not 403
-    terraform plan -out=tfplan | tee ../docs/phase1-plan.txt
-    # review, then:
-    terraform apply tfplan             # operator applies — NOT done by Claude
+  # aws_secretsmanager_secret_version.gateway_host_private_ip will be created
+  + resource "aws_secretsmanager_secret_version" "gateway_host_private_ip" {
+      + arn                  = (known after apply)
+      + has_secret_string_wo = (known after apply)
+      + id                   = (known after apply)
+      + secret_id            = (known after apply)
+      + secret_string        = (sensitive value)
+      + secret_string_wo     = (write-only attribute)
+      + version_id           = (known after apply)
+      + version_stages       = (known after apply)
+    }
 
-=============================================================================
- WHAT THE PLAN WILL CREATE (egress_mode = proxy)  — ~62 resources
-=============================================================================
-module.network   (~19)
-  aws_vpc, aws_internet_gateway, aws_eip(nat), aws_nat_gateway
-  aws_subnet x5            public, firewall, proxy, app[0], app[1]
-  aws_route_table x3       public, egress, app
-  aws_route x2             public default->IGW, egress default->NAT
-  aws_route_table_association x5
-  (app route table has NO default route — the egress invariant, ADR-009)
+  # module.compute.aws_iam_instance_profile.app will be created
+  + resource "aws_iam_instance_profile" "app" {
+      + arn         = (known after apply)
+      + create_date = (known after apply)
+      + id          = (known after apply)
+      + name        = "ai-lab-app-profile"
+      + name_prefix = (known after apply)
+      + path        = "/"
+      + role        = "ai-lab-app-role"
+      + tags_all    = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+      + unique_id   = (known after apply)
+    }
 
-module.logging   (4)
-  aws_cloudwatch_log_group x4
-    /ai-lab/ec2/chat-host, /ai-lab/ec2/gateway-host,
-    /ai-lab/ec2/proxy-host, /ai-lab/networkfw   (30-day retention)
+  # module.compute.aws_iam_role.app will be created
+  + resource "aws_iam_role" "app" {
+      + arn                   = (known after apply)
+      + assume_role_policy    = jsonencode(
+            {
+              + Statement = [
+                  + {
+                      + Action    = "sts:AssumeRole"
+                      + Effect    = "Allow"
+                      + Principal = {
+                          + Service = "ec2.amazonaws.com"
+                        }
+                    },
+                ]
+              + Version   = "2012-10-17"
+            }
+        )
+      + create_date           = (known after apply)
+      + force_detach_policies = false
+      + id                    = (known after apply)
+      + managed_policy_arns   = (known after apply)
+      + max_session_duration  = 3600
+      + name                  = "ai-lab-app-role"
+      + name_prefix           = (known after apply)
+      + path                  = "/"
+      + tags                  = {
+          + "Name" = "ai-lab-app-role"
+        }
+      + tags_all              = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-app-role"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+      + unique_id             = (known after apply)
 
-module.secrets   (16)
-  aws_secretsmanager_secret x16  (lab/* — created EMPTY, seeded post-apply)
+      + inline_policy (known after apply)
+    }
 
-module.proxy[0]  (~12)   [Squid egress allowlist proxy]
-  aws_security_group + 2 ingress(3128) + 4 egress(443/80/53udp/53tcp)
-  aws_iam_role + AmazonSSMManagedInstanceCore attach + logs inline policy
-  aws_iam_instance_profile
-  aws_instance (t3.micro, no public IP, IMDSv2, gp3 8GB encrypted)
+  # module.compute.aws_iam_role_policy.app_inline will be created
+  + resource "aws_iam_role_policy" "app_inline" {
+      + id          = (known after apply)
+      + name        = "ai-lab-app-inline"
+      + name_prefix = (known after apply)
+      + policy      = jsonencode(
+            {
+              + Statement = [
+                  + {
+                      + Action   = [
+                          + "secretsmanager:GetSecretValue",
+                          + "secretsmanager:DescribeSecret",
+                        ]
+                      + Effect   = "Allow"
+                      + Resource = "arn:aws:secretsmanager:us-east-1:317839577064:secret:lab/*"
+                      + Sid      = "ReadLabSecrets"
+                    },
+                  + {
+                      + Action   = [
+                          + "logs:PutLogEvents",
+                          + "logs:DescribeLogStreams",
+                          + "logs:CreateLogStream",
+                        ]
+                      + Effect   = "Allow"
+                      + Resource = [
+                          + "arn:aws:logs:us-east-1:317839577064:log-group:/ai-lab/ec2/gateway-host:*",
+                          + "arn:aws:logs:us-east-1:317839577064:log-group:/ai-lab/ec2/gateway-host",
+                          + "arn:aws:logs:us-east-1:317839577064:log-group:/ai-lab/ec2/chat-host:*",
+                          + "arn:aws:logs:us-east-1:317839577064:log-group:/ai-lab/ec2/chat-host",
+                        ]
+                      + Sid      = "ShipLogs"
+                    },
+                ]
+              + Version   = "2012-10-17"
+            }
+        )
+      + role        = (known after apply)
+    }
 
-module.compute   (~10)
-  aws_security_group + 2 ingress(4000 intra-subnet) + 1 egress(VPC-only)
-  aws_iam_role + SSM attach + inline(GetSecretValue lab/* + logs)
-  aws_iam_instance_profile
-  aws_instance x2 (chat-host, gateway-host; t3.small, no public IP, IMDSv2,
-                   gp3 30GB encrypted, no SSH key)
+  # module.compute.aws_iam_role_policy_attachment.app_ssm will be created
+  + resource "aws_iam_role_policy_attachment" "app_ssm" {
+      + id         = (known after apply)
+      + policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      + role       = "ai-lab-app-role"
+    }
 
-root
-  aws_secretsmanager_secret_version.gateway_host_private_ip
-    (auto-populated from module.compute output)
+  # module.compute.aws_instance.app["chat-host"] will be created
+  + resource "aws_instance" "app" {
+      + ami                                  = (sensitive value)
+      + arn                                  = (known after apply)
+      + associate_public_ip_address          = false
+      + availability_zone                    = (known after apply)
+      + cpu_core_count                       = (known after apply)
+      + cpu_threads_per_core                 = (known after apply)
+      + disable_api_stop                     = (known after apply)
+      + disable_api_termination              = (known after apply)
+      + ebs_optimized                        = (known after apply)
+      + enable_primary_ipv6                  = (known after apply)
+      + get_password_data                    = false
+      + host_id                              = (known after apply)
+      + host_resource_group_arn              = (known after apply)
+      + iam_instance_profile                 = "ai-lab-app-profile"
+      + id                                   = (known after apply)
+      + instance_initiated_shutdown_behavior = (known after apply)
+      + instance_lifecycle                   = (known after apply)
+      + instance_state                       = (known after apply)
+      + instance_type                        = "t3.small"
+      + ipv6_address_count                   = (known after apply)
+      + ipv6_addresses                       = (known after apply)
+      + key_name                             = (known after apply)
+      + monitoring                           = (known after apply)
+      + outpost_arn                          = (known after apply)
+      + password_data                        = (known after apply)
+      + placement_group                      = (known after apply)
+      + placement_partition_number           = (known after apply)
+      + primary_network_interface_id         = (known after apply)
+      + private_dns                          = (known after apply)
+      + private_ip                           = (known after apply)
+      + public_dns                           = (known after apply)
+      + public_ip                            = (known after apply)
+      + secondary_private_ips                = (known after apply)
+      + security_groups                      = (known after apply)
+      + source_dest_check                    = true
+      + spot_instance_request_id             = (known after apply)
+      + subnet_id                            = (known after apply)
+      + tags                                 = {
+          + "Name" = "ai-lab-chat-host"
+          + "Role" = "chat-host"
+        }
+      + tags_all                             = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-chat-host"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+          + "Role"      = "chat-host"
+        }
+      + tenancy                              = (known after apply)
+      + user_data                            = (known after apply)
+      + user_data_base64                     = (known after apply)
+      + user_data_replace_on_change          = false
+      + vpc_security_group_ids               = (known after apply)
 
-module.firewall  (0 in proxy mode)
-  Created only when egress_mode = "networkfirewall" (~7 resources +
-  re-routing). ~$288/mo — see ADR-009.
+      + capacity_reservation_specification (known after apply)
 
-=============================================================================
- POST-APPLY CHECKLIST (verification of the security invariants)
-=============================================================================
-[ ] No security group allows 80/443 from 0.0.0.0/0 (T-CF-I)
-       aws ec2 describe-security-groups --filters Name=vpc-id,Values=<vpc> \
-         --query "SecurityGroups[].IpPermissions[?contains(IpRanges[].CidrIp,'0.0.0.0/0')]"
-[ ] App route table has no 0.0.0.0/0 route (ADR-009 egress invariant)
-[ ] Instances have no public IP and no key_name
-[ ] IMDSv2 required (HttpTokens=required) on all three instances
-[ ] SSM Session Manager works (proves no-SSH access path):
-       aws ssm start-session --target <gateway_host_instance_id>
-[ ] From a host: curl https://example.com FAILS, curl https://api.openai.com OK
-[ ] Seed secrets:  ./scripts/seed-secrets.sh   (Okta secrets: Phase 1.5 script)
+      + cpu_options (known after apply)
+
+      + ebs_block_device (known after apply)
+
+      + enclave_options (known after apply)
+
+      + ephemeral_block_device (known after apply)
+
+      + instance_market_options (known after apply)
+
+      + maintenance_options (known after apply)
+
+      + metadata_options {
+          + http_endpoint               = "enabled"
+          + http_protocol_ipv6          = "disabled"
+          + http_put_response_hop_limit = 2
+          + http_tokens                 = "required"
+          + instance_metadata_tags      = (known after apply)
+        }
+
+      + network_interface (known after apply)
+
+      + private_dns_name_options (known after apply)
+
+      + root_block_device {
+          + delete_on_termination = true
+          + device_name           = (known after apply)
+          + encrypted             = true
+          + iops                  = (known after apply)
+          + kms_key_id            = (known after apply)
+          + tags_all              = (known after apply)
+          + throughput            = (known after apply)
+          + volume_id             = (known after apply)
+          + volume_size           = 30
+          + volume_type           = "gp3"
+        }
+    }
+
+  # module.compute.aws_instance.app["gateway-host"] will be created
+  + resource "aws_instance" "app" {
+      + ami                                  = (sensitive value)
+      + arn                                  = (known after apply)
+      + associate_public_ip_address          = false
+      + availability_zone                    = (known after apply)
+      + cpu_core_count                       = (known after apply)
+      + cpu_threads_per_core                 = (known after apply)
+      + disable_api_stop                     = (known after apply)
+      + disable_api_termination              = (known after apply)
+      + ebs_optimized                        = (known after apply)
+      + enable_primary_ipv6                  = (known after apply)
+      + get_password_data                    = false
+      + host_id                              = (known after apply)
+      + host_resource_group_arn              = (known after apply)
+      + iam_instance_profile                 = "ai-lab-app-profile"
+      + id                                   = (known after apply)
+      + instance_initiated_shutdown_behavior = (known after apply)
+      + instance_lifecycle                   = (known after apply)
+      + instance_state                       = (known after apply)
+      + instance_type                        = "t3.small"
+      + ipv6_address_count                   = (known after apply)
+      + ipv6_addresses                       = (known after apply)
+      + key_name                             = (known after apply)
+      + monitoring                           = (known after apply)
+      + outpost_arn                          = (known after apply)
+      + password_data                        = (known after apply)
+      + placement_group                      = (known after apply)
+      + placement_partition_number           = (known after apply)
+      + primary_network_interface_id         = (known after apply)
+      + private_dns                          = (known after apply)
+      + private_ip                           = (known after apply)
+      + public_dns                           = (known after apply)
+      + public_ip                            = (known after apply)
+      + secondary_private_ips                = (known after apply)
+      + security_groups                      = (known after apply)
+      + source_dest_check                    = true
+      + spot_instance_request_id             = (known after apply)
+      + subnet_id                            = (known after apply)
+      + tags                                 = {
+          + "Name" = "ai-lab-gateway-host"
+          + "Role" = "gateway-host"
+        }
+      + tags_all                             = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-gateway-host"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+          + "Role"      = "gateway-host"
+        }
+      + tenancy                              = (known after apply)
+      + user_data                            = (known after apply)
+      + user_data_base64                     = (known after apply)
+      + user_data_replace_on_change          = false
+      + vpc_security_group_ids               = (known after apply)
+
+      + capacity_reservation_specification (known after apply)
+
+      + cpu_options (known after apply)
+
+      + ebs_block_device (known after apply)
+
+      + enclave_options (known after apply)
+
+      + ephemeral_block_device (known after apply)
+
+      + instance_market_options (known after apply)
+
+      + maintenance_options (known after apply)
+
+      + metadata_options {
+          + http_endpoint               = "enabled"
+          + http_protocol_ipv6          = "disabled"
+          + http_put_response_hop_limit = 2
+          + http_tokens                 = "required"
+          + instance_metadata_tags      = (known after apply)
+        }
+
+      + network_interface (known after apply)
+
+      + private_dns_name_options (known after apply)
+
+      + root_block_device {
+          + delete_on_termination = true
+          + device_name           = (known after apply)
+          + encrypted             = true
+          + iops                  = (known after apply)
+          + kms_key_id            = (known after apply)
+          + tags_all              = (known after apply)
+          + throughput            = (known after apply)
+          + volume_id             = (known after apply)
+          + volume_size           = 30
+          + volume_type           = "gp3"
+        }
+    }
+
+  # module.compute.aws_security_group.app will be created
+  + resource "aws_security_group" "app" {
+      + arn                    = (known after apply)
+      + description            = "App hosts: no public ingress; 4000 intra-subnet; egress to VPC only."
+      + egress                 = (known after apply)
+      + id                     = (known after apply)
+      + ingress                = (known after apply)
+      + name                   = "ai-lab-app-sg"
+      + name_prefix            = (known after apply)
+      + owner_id               = (known after apply)
+      + revoke_rules_on_delete = false
+      + tags                   = {
+          + "Name" = "ai-lab-app-sg"
+        }
+      + tags_all               = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-app-sg"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+      + vpc_id                 = (known after apply)
+    }
+
+  # module.compute.aws_vpc_security_group_egress_rule.cloudflared_http2 will be created
+  + resource "aws_vpc_security_group_egress_rule" "cloudflared_http2" {
+      + arn                    = (known after apply)
+      + cidr_ipv4              = "0.0.0.0/0"
+      + description            = "cloudflared tunnel (HTTP2 fallback) to Cloudflare edge"
+      + from_port              = 7844
+      + id                     = (known after apply)
+      + ip_protocol            = "tcp"
+      + security_group_id      = (known after apply)
+      + security_group_rule_id = (known after apply)
+      + tags_all               = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+      + to_port                = 7844
+    }
+
+  # module.compute.aws_vpc_security_group_egress_rule.cloudflared_quic will be created
+  + resource "aws_vpc_security_group_egress_rule" "cloudflared_quic" {
+      + arn                    = (known after apply)
+      + cidr_ipv4              = "0.0.0.0/0"
+      + description            = "cloudflared tunnel (QUIC) to Cloudflare edge"
+      + from_port              = 7844
+      + id                     = (known after apply)
+      + ip_protocol            = "udp"
+      + security_group_id      = (known after apply)
+      + security_group_rule_id = (known after apply)
+      + tags_all               = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+      + to_port                = 7844
+    }
+
+  # module.compute.aws_vpc_security_group_egress_rule.to_vpc will be created
+  + resource "aws_vpc_security_group_egress_rule" "to_vpc" {
+      + arn                    = (known after apply)
+      + cidr_ipv4              = "10.50.0.0/16"
+      + description            = "All intra-VPC egress (proxy 3128, gateway 4000, DNS)"
+      + id                     = (known after apply)
+      + ip_protocol            = "-1"
+      + security_group_id      = (known after apply)
+      + security_group_rule_id = (known after apply)
+      + tags_all               = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+    }
+
+  # module.compute.aws_vpc_security_group_ingress_rule.litellm_4000[0] will be created
+  + resource "aws_vpc_security_group_ingress_rule" "litellm_4000" {
+      + arn                    = (known after apply)
+      + cidr_ipv4              = "10.50.10.0/24"
+      + description            = "LiteLLM gateway port, chat-host -> gateway-host within app subnet 0"
+      + from_port              = 4000
+      + id                     = (known after apply)
+      + ip_protocol            = "tcp"
+      + security_group_id      = (known after apply)
+      + security_group_rule_id = (known after apply)
+      + tags_all               = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+      + to_port                = 4000
+    }
+
+  # module.compute.aws_vpc_security_group_ingress_rule.litellm_4000[1] will be created
+  + resource "aws_vpc_security_group_ingress_rule" "litellm_4000" {
+      + arn                    = (known after apply)
+      + cidr_ipv4              = "10.50.11.0/24"
+      + description            = "LiteLLM gateway port, chat-host -> gateway-host within app subnet 1"
+      + from_port              = 4000
+      + id                     = (known after apply)
+      + ip_protocol            = "tcp"
+      + security_group_id      = (known after apply)
+      + security_group_rule_id = (known after apply)
+      + tags_all               = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+      + to_port                = 4000
+    }
+
+  # module.logging.aws_cloudwatch_log_group.this["chat_host"] will be created
+  + resource "aws_cloudwatch_log_group" "this" {
+      + arn               = (known after apply)
+      + id                = (known after apply)
+      + log_group_class   = (known after apply)
+      + name              = "/ai-lab/ec2/chat-host"
+      + name_prefix       = (known after apply)
+      + retention_in_days = 30
+      + skip_destroy      = false
+      + tags              = {
+          + "Name" = "ai-lab-chat-host"
+        }
+      + tags_all          = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-chat-host"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+    }
+
+  # module.logging.aws_cloudwatch_log_group.this["gateway_host"] will be created
+  + resource "aws_cloudwatch_log_group" "this" {
+      + arn               = (known after apply)
+      + id                = (known after apply)
+      + log_group_class   = (known after apply)
+      + name              = "/ai-lab/ec2/gateway-host"
+      + name_prefix       = (known after apply)
+      + retention_in_days = 30
+      + skip_destroy      = false
+      + tags              = {
+          + "Name" = "ai-lab-gateway-host"
+        }
+      + tags_all          = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-gateway-host"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+    }
+
+  # module.logging.aws_cloudwatch_log_group.this["networkfw"] will be created
+  + resource "aws_cloudwatch_log_group" "this" {
+      + arn               = (known after apply)
+      + id                = (known after apply)
+      + log_group_class   = (known after apply)
+      + name              = "/ai-lab/networkfw"
+      + name_prefix       = (known after apply)
+      + retention_in_days = 30
+      + skip_destroy      = false
+      + tags              = {
+          + "Name" = "ai-lab-networkfw"
+        }
+      + tags_all          = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-networkfw"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+    }
+
+  # module.logging.aws_cloudwatch_log_group.this["proxy_host"] will be created
+  + resource "aws_cloudwatch_log_group" "this" {
+      + arn               = (known after apply)
+      + id                = (known after apply)
+      + log_group_class   = (known after apply)
+      + name              = "/ai-lab/ec2/proxy-host"
+      + name_prefix       = (known after apply)
+      + retention_in_days = 30
+      + skip_destroy      = false
+      + tags              = {
+          + "Name" = "ai-lab-proxy-host"
+        }
+      + tags_all          = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-proxy-host"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+    }
+
+  # module.network.aws_eip.nat will be created
+  + resource "aws_eip" "nat" {
+      + allocation_id        = (known after apply)
+      + arn                  = (known after apply)
+      + association_id       = (known after apply)
+      + carrier_ip           = (known after apply)
+      + customer_owned_ip    = (known after apply)
+      + domain               = "vpc"
+      + id                   = (known after apply)
+      + instance             = (known after apply)
+      + ipam_pool_id         = (known after apply)
+      + network_border_group = (known after apply)
+      + network_interface    = (known after apply)
+      + private_dns          = (known after apply)
+      + private_ip           = (known after apply)
+      + ptr_record           = (known after apply)
+      + public_dns           = (known after apply)
+      + public_ip            = (known after apply)
+      + public_ipv4_pool     = (known after apply)
+      + tags                 = {
+          + "Name" = "ai-lab-nat-eip"
+        }
+      + tags_all             = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-nat-eip"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+      + vpc                  = (known after apply)
+    }
+
+  # module.network.aws_internet_gateway.this will be created
+  + resource "aws_internet_gateway" "this" {
+      + arn      = (known after apply)
+      + id       = (known after apply)
+      + owner_id = (known after apply)
+      + tags     = {
+          + "Name" = "ai-lab-igw"
+        }
+      + tags_all = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-igw"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+      + vpc_id   = (known after apply)
+    }
+
+  # module.network.aws_nat_gateway.this will be created
+  + resource "aws_nat_gateway" "this" {
+      + allocation_id                      = (known after apply)
+      + association_id                     = (known after apply)
+      + connectivity_type                  = "public"
+      + id                                 = (known after apply)
+      + network_interface_id               = (known after apply)
+      + private_ip                         = (known after apply)
+      + public_ip                          = (known after apply)
+      + secondary_private_ip_address_count = (known after apply)
+      + secondary_private_ip_addresses     = (known after apply)
+      + subnet_id                          = (known after apply)
+      + tags                               = {
+          + "Name" = "ai-lab-nat"
+        }
+      + tags_all                           = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-nat"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+    }
+
+  # module.network.aws_route.app_default[0] will be created
+  + resource "aws_route" "app_default" {
+      + destination_cidr_block = "0.0.0.0/0"
+      + id                     = (known after apply)
+      + instance_id            = (known after apply)
+      + instance_owner_id      = (known after apply)
+      + nat_gateway_id         = (known after apply)
+      + network_interface_id   = (known after apply)
+      + origin                 = (known after apply)
+      + route_table_id         = (known after apply)
+      + state                  = (known after apply)
+    }
+
+  # module.network.aws_route.egress_default will be created
+  + resource "aws_route" "egress_default" {
+      + destination_cidr_block = "0.0.0.0/0"
+      + id                     = (known after apply)
+      + instance_id            = (known after apply)
+      + instance_owner_id      = (known after apply)
+      + nat_gateway_id         = (known after apply)
+      + network_interface_id   = (known after apply)
+      + origin                 = (known after apply)
+      + route_table_id         = (known after apply)
+      + state                  = (known after apply)
+    }
+
+  # module.network.aws_route.public_default will be created
+  + resource "aws_route" "public_default" {
+      + destination_cidr_block = "0.0.0.0/0"
+      + gateway_id             = (known after apply)
+      + id                     = (known after apply)
+      + instance_id            = (known after apply)
+      + instance_owner_id      = (known after apply)
+      + network_interface_id   = (known after apply)
+      + origin                 = (known after apply)
+      + route_table_id         = (known after apply)
+      + state                  = (known after apply)
+    }
+
+  # module.network.aws_route_table.app will be created
+  + resource "aws_route_table" "app" {
+      + arn              = (known after apply)
+      + id               = (known after apply)
+      + owner_id         = (known after apply)
+      + propagating_vgws = (known after apply)
+      + route            = (known after apply)
+      + tags             = {
+          + "Name" = "ai-lab-rt-app"
+        }
+      + tags_all         = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-rt-app"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+      + vpc_id           = (known after apply)
+    }
+
+  # module.network.aws_route_table.egress will be created
+  + resource "aws_route_table" "egress" {
+      + arn              = (known after apply)
+      + id               = (known after apply)
+      + owner_id         = (known after apply)
+      + propagating_vgws = (known after apply)
+      + route            = (known after apply)
+      + tags             = {
+          + "Name" = "ai-lab-rt-egress"
+        }
+      + tags_all         = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-rt-egress"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+      + vpc_id           = (known after apply)
+    }
+
+  # module.network.aws_route_table.public will be created
+  + resource "aws_route_table" "public" {
+      + arn              = (known after apply)
+      + id               = (known after apply)
+      + owner_id         = (known after apply)
+      + propagating_vgws = (known after apply)
+      + route            = (known after apply)
+      + tags             = {
+          + "Name" = "ai-lab-rt-public"
+        }
+      + tags_all         = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-rt-public"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+      + vpc_id           = (known after apply)
+    }
+
+  # module.network.aws_route_table_association.app[0] will be created
+  + resource "aws_route_table_association" "app" {
+      + id             = (known after apply)
+      + route_table_id = (known after apply)
+      + subnet_id      = (known after apply)
+    }
+
+  # module.network.aws_route_table_association.app[1] will be created
+  + resource "aws_route_table_association" "app" {
+      + id             = (known after apply)
+      + route_table_id = (known after apply)
+      + subnet_id      = (known after apply)
+    }
+
+  # module.network.aws_route_table_association.firewall will be created
+  + resource "aws_route_table_association" "firewall" {
+      + id             = (known after apply)
+      + route_table_id = (known after apply)
+      + subnet_id      = (known after apply)
+    }
+
+  # module.network.aws_route_table_association.proxy will be created
+  + resource "aws_route_table_association" "proxy" {
+      + id             = (known after apply)
+      + route_table_id = (known after apply)
+      + subnet_id      = (known after apply)
+    }
+
+  # module.network.aws_route_table_association.public will be created
+  + resource "aws_route_table_association" "public" {
+      + id             = (known after apply)
+      + route_table_id = (known after apply)
+      + subnet_id      = (known after apply)
+    }
+
+  # module.network.aws_subnet.app[0] will be created
+  + resource "aws_subnet" "app" {
+      + arn                                            = (known after apply)
+      + assign_ipv6_address_on_creation                = false
+      + availability_zone                              = "us-east-1a"
+      + availability_zone_id                           = (known after apply)
+      + cidr_block                                     = "10.50.10.0/24"
+      + enable_dns64                                   = false
+      + enable_resource_name_dns_a_record_on_launch    = false
+      + enable_resource_name_dns_aaaa_record_on_launch = false
+      + id                                             = (known after apply)
+      + ipv6_cidr_block_association_id                 = (known after apply)
+      + ipv6_native                                    = false
+      + map_public_ip_on_launch                        = false
+      + owner_id                                       = (known after apply)
+      + private_dns_hostname_type_on_launch            = (known after apply)
+      + tags                                           = {
+          + "Name" = "ai-lab-app-0"
+          + "Tier" = "app"
+        }
+      + tags_all                                       = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-app-0"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+          + "Tier"      = "app"
+        }
+      + vpc_id                                         = (known after apply)
+    }
+
+  # module.network.aws_subnet.app[1] will be created
+  + resource "aws_subnet" "app" {
+      + arn                                            = (known after apply)
+      + assign_ipv6_address_on_creation                = false
+      + availability_zone                              = "us-east-1b"
+      + availability_zone_id                           = (known after apply)
+      + cidr_block                                     = "10.50.11.0/24"
+      + enable_dns64                                   = false
+      + enable_resource_name_dns_a_record_on_launch    = false
+      + enable_resource_name_dns_aaaa_record_on_launch = false
+      + id                                             = (known after apply)
+      + ipv6_cidr_block_association_id                 = (known after apply)
+      + ipv6_native                                    = false
+      + map_public_ip_on_launch                        = false
+      + owner_id                                       = (known after apply)
+      + private_dns_hostname_type_on_launch            = (known after apply)
+      + tags                                           = {
+          + "Name" = "ai-lab-app-1"
+          + "Tier" = "app"
+        }
+      + tags_all                                       = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-app-1"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+          + "Tier"      = "app"
+        }
+      + vpc_id                                         = (known after apply)
+    }
+
+  # module.network.aws_subnet.firewall will be created
+  + resource "aws_subnet" "firewall" {
+      + arn                                            = (known after apply)
+      + assign_ipv6_address_on_creation                = false
+      + availability_zone                              = "us-east-1a"
+      + availability_zone_id                           = (known after apply)
+      + cidr_block                                     = "10.50.1.0/24"
+      + enable_dns64                                   = false
+      + enable_resource_name_dns_a_record_on_launch    = false
+      + enable_resource_name_dns_aaaa_record_on_launch = false
+      + id                                             = (known after apply)
+      + ipv6_cidr_block_association_id                 = (known after apply)
+      + ipv6_native                                    = false
+      + map_public_ip_on_launch                        = false
+      + owner_id                                       = (known after apply)
+      + private_dns_hostname_type_on_launch            = (known after apply)
+      + tags                                           = {
+          + "Name" = "ai-lab-firewall"
+          + "Tier" = "firewall"
+        }
+      + tags_all                                       = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-firewall"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+          + "Tier"      = "firewall"
+        }
+      + vpc_id                                         = (known after apply)
+    }
+
+  # module.network.aws_subnet.proxy will be created
+  + resource "aws_subnet" "proxy" {
+      + arn                                            = (known after apply)
+      + assign_ipv6_address_on_creation                = false
+      + availability_zone                              = "us-east-1a"
+      + availability_zone_id                           = (known after apply)
+      + cidr_block                                     = "10.50.2.0/24"
+      + enable_dns64                                   = false
+      + enable_resource_name_dns_a_record_on_launch    = false
+      + enable_resource_name_dns_aaaa_record_on_launch = false
+      + id                                             = (known after apply)
+      + ipv6_cidr_block_association_id                 = (known after apply)
+      + ipv6_native                                    = false
+      + map_public_ip_on_launch                        = false
+      + owner_id                                       = (known after apply)
+      + private_dns_hostname_type_on_launch            = (known after apply)
+      + tags                                           = {
+          + "Name" = "ai-lab-proxy"
+          + "Tier" = "egress-proxy"
+        }
+      + tags_all                                       = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-proxy"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+          + "Tier"      = "egress-proxy"
+        }
+      + vpc_id                                         = (known after apply)
+    }
+
+  # module.network.aws_subnet.public will be created
+  + resource "aws_subnet" "public" {
+      + arn                                            = (known after apply)
+      + assign_ipv6_address_on_creation                = false
+      + availability_zone                              = "us-east-1a"
+      + availability_zone_id                           = (known after apply)
+      + cidr_block                                     = "10.50.0.0/24"
+      + enable_dns64                                   = false
+      + enable_resource_name_dns_a_record_on_launch    = false
+      + enable_resource_name_dns_aaaa_record_on_launch = false
+      + id                                             = (known after apply)
+      + ipv6_cidr_block_association_id                 = (known after apply)
+      + ipv6_native                                    = false
+      + map_public_ip_on_launch                        = false
+      + owner_id                                       = (known after apply)
+      + private_dns_hostname_type_on_launch            = (known after apply)
+      + tags                                           = {
+          + "Name" = "ai-lab-public"
+          + "Tier" = "public"
+        }
+      + tags_all                                       = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-public"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+          + "Tier"      = "public"
+        }
+      + vpc_id                                         = (known after apply)
+    }
+
+  # module.network.aws_vpc.this will be created
+  + resource "aws_vpc" "this" {
+      + arn                                  = (known after apply)
+      + cidr_block                           = "10.50.0.0/16"
+      + default_network_acl_id               = (known after apply)
+      + default_route_table_id               = (known after apply)
+      + default_security_group_id            = (known after apply)
+      + dhcp_options_id                      = (known after apply)
+      + enable_dns_hostnames                 = true
+      + enable_dns_support                   = true
+      + enable_network_address_usage_metrics = (known after apply)
+      + id                                   = (known after apply)
+      + instance_tenancy                     = "default"
+      + ipv6_association_id                  = (known after apply)
+      + ipv6_cidr_block                      = (known after apply)
+      + ipv6_cidr_block_network_border_group = (known after apply)
+      + main_route_table_id                  = (known after apply)
+      + owner_id                             = (known after apply)
+      + tags                                 = {
+          + "Name" = "ai-lab-vpc"
+        }
+      + tags_all                             = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-vpc"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+    }
+
+  # module.proxy[0].data.aws_vpc.this will be read during apply
+  # (config refers to values not yet known)
+ <= data "aws_vpc" "this" {
+      + arn                                  = (known after apply)
+      + cidr_block                           = (known after apply)
+      + cidr_block_associations              = (known after apply)
+      + default                              = (known after apply)
+      + dhcp_options_id                      = (known after apply)
+      + enable_dns_hostnames                 = (known after apply)
+      + enable_dns_support                   = (known after apply)
+      + enable_network_address_usage_metrics = (known after apply)
+      + id                                   = (known after apply)
+      + instance_tenancy                     = (known after apply)
+      + ipv6_association_id                  = (known after apply)
+      + ipv6_cidr_block                      = (known after apply)
+      + main_route_table_id                  = (known after apply)
+      + owner_id                             = (known after apply)
+      + state                                = (known after apply)
+      + tags                                 = (known after apply)
+    }
+
+  # module.proxy[0].aws_iam_instance_profile.proxy will be created
+  + resource "aws_iam_instance_profile" "proxy" {
+      + arn         = (known after apply)
+      + create_date = (known after apply)
+      + id          = (known after apply)
+      + name        = "ai-lab-proxy-profile"
+      + name_prefix = (known after apply)
+      + path        = "/"
+      + role        = "ai-lab-proxy-role"
+      + tags_all    = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+      + unique_id   = (known after apply)
+    }
+
+  # module.proxy[0].aws_iam_role.proxy will be created
+  + resource "aws_iam_role" "proxy" {
+      + arn                   = (known after apply)
+      + assume_role_policy    = jsonencode(
+            {
+              + Statement = [
+                  + {
+                      + Action    = "sts:AssumeRole"
+                      + Effect    = "Allow"
+                      + Principal = {
+                          + Service = "ec2.amazonaws.com"
+                        }
+                    },
+                ]
+              + Version   = "2012-10-17"
+            }
+        )
+      + create_date           = (known after apply)
+      + force_detach_policies = false
+      + id                    = (known after apply)
+      + managed_policy_arns   = (known after apply)
+      + max_session_duration  = 3600
+      + name                  = "ai-lab-proxy-role"
+      + name_prefix           = (known after apply)
+      + path                  = "/"
+      + tags                  = {
+          + "Name" = "ai-lab-proxy-role"
+        }
+      + tags_all              = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-proxy-role"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+      + unique_id             = (known after apply)
+
+      + inline_policy (known after apply)
+    }
+
+  # module.proxy[0].aws_iam_role_policy.proxy_logs will be created
+  + resource "aws_iam_role_policy" "proxy_logs" {
+      + id          = (known after apply)
+      + name        = "ai-lab-proxy-logs"
+      + name_prefix = (known after apply)
+      + policy      = jsonencode(
+            {
+              + Statement = [
+                  + {
+                      + Action   = [
+                          + "logs:PutLogEvents",
+                          + "logs:DescribeLogStreams",
+                          + "logs:CreateLogStream",
+                        ]
+                      + Effect   = "Allow"
+                      + Resource = [
+                          + "arn:aws:logs:us-east-1:317839577064:log-group:/ai-lab/ec2/proxy-host:*",
+                          + "arn:aws:logs:us-east-1:317839577064:log-group:/ai-lab/ec2/proxy-host",
+                        ]
+                      + Sid      = "ShipSquidLogs"
+                    },
+                ]
+              + Version   = "2012-10-17"
+            }
+        )
+      + role        = (known after apply)
+    }
+
+  # module.proxy[0].aws_iam_role_policy_attachment.proxy_ssm will be created
+  + resource "aws_iam_role_policy_attachment" "proxy_ssm" {
+      + id         = (known after apply)
+      + policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      + role       = "ai-lab-proxy-role"
+    }
+
+  # module.proxy[0].aws_instance.proxy will be created
+  + resource "aws_instance" "proxy" {
+      + ami                                  = (sensitive value)
+      + arn                                  = (known after apply)
+      + associate_public_ip_address          = false
+      + availability_zone                    = (known after apply)
+      + cpu_core_count                       = (known after apply)
+      + cpu_threads_per_core                 = (known after apply)
+      + disable_api_stop                     = (known after apply)
+      + disable_api_termination              = (known after apply)
+      + ebs_optimized                        = (known after apply)
+      + enable_primary_ipv6                  = (known after apply)
+      + get_password_data                    = false
+      + host_id                              = (known after apply)
+      + host_resource_group_arn              = (known after apply)
+      + iam_instance_profile                 = "ai-lab-proxy-profile"
+      + id                                   = (known after apply)
+      + instance_initiated_shutdown_behavior = (known after apply)
+      + instance_lifecycle                   = (known after apply)
+      + instance_state                       = (known after apply)
+      + instance_type                        = "t3.micro"
+      + ipv6_address_count                   = (known after apply)
+      + ipv6_addresses                       = (known after apply)
+      + key_name                             = (known after apply)
+      + monitoring                           = (known after apply)
+      + outpost_arn                          = (known after apply)
+      + password_data                        = (known after apply)
+      + placement_group                      = (known after apply)
+      + placement_partition_number           = (known after apply)
+      + primary_network_interface_id         = (known after apply)
+      + private_dns                          = (known after apply)
+      + private_ip                           = (known after apply)
+      + public_dns                           = (known after apply)
+      + public_ip                            = (known after apply)
+      + secondary_private_ips                = (known after apply)
+      + security_groups                      = (known after apply)
+      + source_dest_check                    = true
+      + spot_instance_request_id             = (known after apply)
+      + subnet_id                            = (known after apply)
+      + tags                                 = {
+          + "Name" = "ai-lab-proxy"
+        }
+      + tags_all                             = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-proxy"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+      + tenancy                              = (known after apply)
+      + user_data                            = "9263b9efb1491997ad17c979fc05d03f9c6f8750"
+      + user_data_base64                     = (known after apply)
+      + user_data_replace_on_change          = false
+      + vpc_security_group_ids               = (known after apply)
+
+      + capacity_reservation_specification (known after apply)
+
+      + cpu_options (known after apply)
+
+      + ebs_block_device (known after apply)
+
+      + enclave_options (known after apply)
+
+      + ephemeral_block_device (known after apply)
+
+      + instance_market_options (known after apply)
+
+      + maintenance_options (known after apply)
+
+      + metadata_options {
+          + http_endpoint               = "enabled"
+          + http_protocol_ipv6          = "disabled"
+          + http_put_response_hop_limit = 1
+          + http_tokens                 = "required"
+          + instance_metadata_tags      = (known after apply)
+        }
+
+      + network_interface (known after apply)
+
+      + private_dns_name_options (known after apply)
+
+      + root_block_device {
+          + delete_on_termination = true
+          + device_name           = (known after apply)
+          + encrypted             = true
+          + iops                  = (known after apply)
+          + kms_key_id            = (known after apply)
+          + tags_all              = (known after apply)
+          + throughput            = (known after apply)
+          + volume_id             = (known after apply)
+          + volume_size           = 8
+          + volume_type           = "gp3"
+        }
+    }
+
+  # module.proxy[0].aws_security_group.proxy will be created
+  + resource "aws_security_group" "proxy" {
+      + arn                    = (known after apply)
+      + description            = "Squid egress proxy: 3128 inbound from app subnets only; 80/443/53 outbound."
+      + egress                 = (known after apply)
+      + id                     = (known after apply)
+      + ingress                = (known after apply)
+      + name                   = "ai-lab-proxy-sg"
+      + name_prefix            = (known after apply)
+      + owner_id               = (known after apply)
+      + revoke_rules_on_delete = false
+      + tags                   = {
+          + "Name" = "ai-lab-proxy-sg"
+        }
+      + tags_all               = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "ai-lab-proxy-sg"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+      + vpc_id                 = (known after apply)
+    }
+
+  # module.proxy[0].aws_vpc_security_group_egress_rule.proxy_dns_tcp will be created
+  + resource "aws_vpc_security_group_egress_rule" "proxy_dns_tcp" {
+      + arn                    = (known after apply)
+      + cidr_ipv4              = (known after apply)
+      + description            = "DNS (TCP) to VPC resolver"
+      + from_port              = 53
+      + id                     = (known after apply)
+      + ip_protocol            = "tcp"
+      + security_group_id      = (known after apply)
+      + security_group_rule_id = (known after apply)
+      + tags_all               = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+      + to_port                = 53
+    }
+
+  # module.proxy[0].aws_vpc_security_group_egress_rule.proxy_dns_udp will be created
+  + resource "aws_vpc_security_group_egress_rule" "proxy_dns_udp" {
+      + arn                    = (known after apply)
+      + cidr_ipv4              = (known after apply)
+      + description            = "DNS to VPC resolver"
+      + from_port              = 53
+      + id                     = (known after apply)
+      + ip_protocol            = "udp"
+      + security_group_id      = (known after apply)
+      + security_group_rule_id = (known after apply)
+      + tags_all               = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+      + to_port                = 53
+    }
+
+  # module.proxy[0].aws_vpc_security_group_egress_rule.proxy_http will be created
+  + resource "aws_vpc_security_group_egress_rule" "proxy_http" {
+      + arn                    = (known after apply)
+      + cidr_ipv4              = "0.0.0.0/0"
+      + description            = "Outbound HTTP to allowed package/OS mirrors"
+      + from_port              = 80
+      + id                     = (known after apply)
+      + ip_protocol            = "tcp"
+      + security_group_id      = (known after apply)
+      + security_group_rule_id = (known after apply)
+      + tags_all               = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+      + to_port                = 80
+    }
+
+  # module.proxy[0].aws_vpc_security_group_egress_rule.proxy_https will be created
+  + resource "aws_vpc_security_group_egress_rule" "proxy_https" {
+      + arn                    = (known after apply)
+      + cidr_ipv4              = "0.0.0.0/0"
+      + description            = "Outbound HTTPS to allowed domains (enforced by squid app logic)"
+      + from_port              = 443
+      + id                     = (known after apply)
+      + ip_protocol            = "tcp"
+      + security_group_id      = (known after apply)
+      + security_group_rule_id = (known after apply)
+      + tags_all               = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+      + to_port                = 443
+    }
+
+  # module.proxy[0].aws_vpc_security_group_ingress_rule.proxy_3128[0] will be created
+  + resource "aws_vpc_security_group_ingress_rule" "proxy_3128" {
+      + arn                    = (known after apply)
+      + cidr_ipv4              = "10.50.10.0/24"
+      + description            = "Squid proxy port from app subnet 0"
+      + from_port              = 3128
+      + id                     = (known after apply)
+      + ip_protocol            = "tcp"
+      + security_group_id      = (known after apply)
+      + security_group_rule_id = (known after apply)
+      + tags_all               = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+      + to_port                = 3128
+    }
+
+  # module.proxy[0].aws_vpc_security_group_ingress_rule.proxy_3128[1] will be created
+  + resource "aws_vpc_security_group_ingress_rule" "proxy_3128" {
+      + arn                    = (known after apply)
+      + cidr_ipv4              = "10.50.11.0/24"
+      + description            = "Squid proxy port from app subnet 1"
+      + from_port              = 3128
+      + id                     = (known after apply)
+      + ip_protocol            = "tcp"
+      + security_group_id      = (known after apply)
+      + security_group_rule_id = (known after apply)
+      + tags_all               = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+      + to_port                = 3128
+    }
+
+  # module.secrets.aws_secretsmanager_secret.this["anthropic_api_key"] will be created
+  + resource "aws_secretsmanager_secret" "this" {
+      + arn                            = (known after apply)
+      + description                    = "Zero Trust AI Lab secret: anthropic_api_key (seeded post-apply)"
+      + force_overwrite_replica_secret = false
+      + id                             = (known after apply)
+      + name                           = "lab/anthropic_api_key"
+      + name_prefix                    = (known after apply)
+      + policy                         = (known after apply)
+      + recovery_window_in_days        = 7
+      + tags                           = {
+          + "Name" = "lab/anthropic_api_key"
+        }
+      + tags_all                       = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "lab/anthropic_api_key"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+
+      + replica (known after apply)
+    }
+
+  # module.secrets.aws_secretsmanager_secret.this["cloudflare_tunnel_token_chat"] will be created
+  + resource "aws_secretsmanager_secret" "this" {
+      + arn                            = (known after apply)
+      + description                    = "Zero Trust AI Lab secret: cloudflare_tunnel_token_chat (seeded post-apply)"
+      + force_overwrite_replica_secret = false
+      + id                             = (known after apply)
+      + name                           = "lab/cloudflare_tunnel_token_chat"
+      + name_prefix                    = (known after apply)
+      + policy                         = (known after apply)
+      + recovery_window_in_days        = 7
+      + tags                           = {
+          + "Name" = "lab/cloudflare_tunnel_token_chat"
+        }
+      + tags_all                       = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "lab/cloudflare_tunnel_token_chat"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+
+      + replica (known after apply)
+    }
+
+  # module.secrets.aws_secretsmanager_secret.this["cloudflare_tunnel_token_gateway"] will be created
+  + resource "aws_secretsmanager_secret" "this" {
+      + arn                            = (known after apply)
+      + description                    = "Zero Trust AI Lab secret: cloudflare_tunnel_token_gateway (seeded post-apply)"
+      + force_overwrite_replica_secret = false
+      + id                             = (known after apply)
+      + name                           = "lab/cloudflare_tunnel_token_gateway"
+      + name_prefix                    = (known after apply)
+      + policy                         = (known after apply)
+      + recovery_window_in_days        = 7
+      + tags                           = {
+          + "Name" = "lab/cloudflare_tunnel_token_gateway"
+        }
+      + tags_all                       = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "lab/cloudflare_tunnel_token_gateway"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+
+      + replica (known after apply)
+    }
+
+  # module.secrets.aws_secretsmanager_secret.this["gateway_host_private_ip"] will be created
+  + resource "aws_secretsmanager_secret" "this" {
+      + arn                            = (known after apply)
+      + description                    = "Zero Trust AI Lab secret: gateway_host_private_ip (seeded post-apply)"
+      + force_overwrite_replica_secret = false
+      + id                             = (known after apply)
+      + name                           = "lab/gateway_host_private_ip"
+      + name_prefix                    = (known after apply)
+      + policy                         = (known after apply)
+      + recovery_window_in_days        = 7
+      + tags                           = {
+          + "Name" = "lab/gateway_host_private_ip"
+        }
+      + tags_all                       = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "lab/gateway_host_private_ip"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+
+      + replica (known after apply)
+    }
+
+  # module.secrets.aws_secretsmanager_secret.this["litellm_master_key"] will be created
+  + resource "aws_secretsmanager_secret" "this" {
+      + arn                            = (known after apply)
+      + description                    = "Zero Trust AI Lab secret: litellm_master_key (seeded post-apply)"
+      + force_overwrite_replica_secret = false
+      + id                             = (known after apply)
+      + name                           = "lab/litellm_master_key"
+      + name_prefix                    = (known after apply)
+      + policy                         = (known after apply)
+      + recovery_window_in_days        = 7
+      + tags                           = {
+          + "Name" = "lab/litellm_master_key"
+        }
+      + tags_all                       = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "lab/litellm_master_key"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+
+      + replica (known after apply)
+    }
+
+  # module.secrets.aws_secretsmanager_secret.this["litellm_salt_key"] will be created
+  + resource "aws_secretsmanager_secret" "this" {
+      + arn                            = (known after apply)
+      + description                    = "Zero Trust AI Lab secret: litellm_salt_key (seeded post-apply)"
+      + force_overwrite_replica_secret = false
+      + id                             = (known after apply)
+      + name                           = "lab/litellm_salt_key"
+      + name_prefix                    = (known after apply)
+      + policy                         = (known after apply)
+      + recovery_window_in_days        = 7
+      + tags                           = {
+          + "Name" = "lab/litellm_salt_key"
+        }
+      + tags_all                       = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "lab/litellm_salt_key"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+
+      + replica (known after apply)
+    }
+
+  # module.secrets.aws_secretsmanager_secret.this["litellm_virtual_key_webui"] will be created
+  + resource "aws_secretsmanager_secret" "this" {
+      + arn                            = (known after apply)
+      + description                    = "Zero Trust AI Lab secret: litellm_virtual_key_webui (seeded post-apply)"
+      + force_overwrite_replica_secret = false
+      + id                             = (known after apply)
+      + name                           = "lab/litellm_virtual_key_webui"
+      + name_prefix                    = (known after apply)
+      + policy                         = (known after apply)
+      + recovery_window_in_days        = 7
+      + tags                           = {
+          + "Name" = "lab/litellm_virtual_key_webui"
+        }
+      + tags_all                       = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "lab/litellm_virtual_key_webui"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+
+      + replica (known after apply)
+    }
+
+  # module.secrets.aws_secretsmanager_secret.this["okta_cf_client_id"] will be created
+  + resource "aws_secretsmanager_secret" "this" {
+      + arn                            = (known after apply)
+      + description                    = "Zero Trust AI Lab secret: okta_cf_client_id (seeded post-apply)"
+      + force_overwrite_replica_secret = false
+      + id                             = (known after apply)
+      + name                           = "lab/okta_cf_client_id"
+      + name_prefix                    = (known after apply)
+      + policy                         = (known after apply)
+      + recovery_window_in_days        = 7
+      + tags                           = {
+          + "Name" = "lab/okta_cf_client_id"
+        }
+      + tags_all                       = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "lab/okta_cf_client_id"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+
+      + replica (known after apply)
+    }
+
+  # module.secrets.aws_secretsmanager_secret.this["okta_cf_client_secret"] will be created
+  + resource "aws_secretsmanager_secret" "this" {
+      + arn                            = (known after apply)
+      + description                    = "Zero Trust AI Lab secret: okta_cf_client_secret (seeded post-apply)"
+      + force_overwrite_replica_secret = false
+      + id                             = (known after apply)
+      + name                           = "lab/okta_cf_client_secret"
+      + name_prefix                    = (known after apply)
+      + policy                         = (known after apply)
+      + recovery_window_in_days        = 7
+      + tags                           = {
+          + "Name" = "lab/okta_cf_client_secret"
+        }
+      + tags_all                       = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "lab/okta_cf_client_secret"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+
+      + replica (known after apply)
+    }
+
+  # module.secrets.aws_secretsmanager_secret.this["okta_litellm_client_id"] will be created
+  + resource "aws_secretsmanager_secret" "this" {
+      + arn                            = (known after apply)
+      + description                    = "Zero Trust AI Lab secret: okta_litellm_client_id (seeded post-apply)"
+      + force_overwrite_replica_secret = false
+      + id                             = (known after apply)
+      + name                           = "lab/okta_litellm_client_id"
+      + name_prefix                    = (known after apply)
+      + policy                         = (known after apply)
+      + recovery_window_in_days        = 7
+      + tags                           = {
+          + "Name" = "lab/okta_litellm_client_id"
+        }
+      + tags_all                       = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "lab/okta_litellm_client_id"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+
+      + replica (known after apply)
+    }
+
+  # module.secrets.aws_secretsmanager_secret.this["okta_litellm_client_secret"] will be created
+  + resource "aws_secretsmanager_secret" "this" {
+      + arn                            = (known after apply)
+      + description                    = "Zero Trust AI Lab secret: okta_litellm_client_secret (seeded post-apply)"
+      + force_overwrite_replica_secret = false
+      + id                             = (known after apply)
+      + name                           = "lab/okta_litellm_client_secret"
+      + name_prefix                    = (known after apply)
+      + policy                         = (known after apply)
+      + recovery_window_in_days        = 7
+      + tags                           = {
+          + "Name" = "lab/okta_litellm_client_secret"
+        }
+      + tags_all                       = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "lab/okta_litellm_client_secret"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+
+      + replica (known after apply)
+    }
+
+  # module.secrets.aws_secretsmanager_secret.this["okta_tenant_url"] will be created
+  + resource "aws_secretsmanager_secret" "this" {
+      + arn                            = (known after apply)
+      + description                    = "Zero Trust AI Lab secret: okta_tenant_url (seeded post-apply)"
+      + force_overwrite_replica_secret = false
+      + id                             = (known after apply)
+      + name                           = "lab/okta_tenant_url"
+      + name_prefix                    = (known after apply)
+      + policy                         = (known after apply)
+      + recovery_window_in_days        = 7
+      + tags                           = {
+          + "Name" = "lab/okta_tenant_url"
+        }
+      + tags_all                       = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "lab/okta_tenant_url"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+
+      + replica (known after apply)
+    }
+
+  # module.secrets.aws_secretsmanager_secret.this["openai_api_key"] will be created
+  + resource "aws_secretsmanager_secret" "this" {
+      + arn                            = (known after apply)
+      + description                    = "Zero Trust AI Lab secret: openai_api_key (seeded post-apply)"
+      + force_overwrite_replica_secret = false
+      + id                             = (known after apply)
+      + name                           = "lab/openai_api_key"
+      + name_prefix                    = (known after apply)
+      + policy                         = (known after apply)
+      + recovery_window_in_days        = 7
+      + tags                           = {
+          + "Name" = "lab/openai_api_key"
+        }
+      + tags_all                       = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "lab/openai_api_key"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+
+      + replica (known after apply)
+    }
+
+  # module.secrets.aws_secretsmanager_secret.this["postgres_password"] will be created
+  + resource "aws_secretsmanager_secret" "this" {
+      + arn                            = (known after apply)
+      + description                    = "Zero Trust AI Lab secret: postgres_password (seeded post-apply)"
+      + force_overwrite_replica_secret = false
+      + id                             = (known after apply)
+      + name                           = "lab/postgres_password"
+      + name_prefix                    = (known after apply)
+      + policy                         = (known after apply)
+      + recovery_window_in_days        = 7
+      + tags                           = {
+          + "Name" = "lab/postgres_password"
+        }
+      + tags_all                       = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "lab/postgres_password"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+
+      + replica (known after apply)
+    }
+
+  # module.secrets.aws_secretsmanager_secret.this["sam_gov_api_key"] will be created
+  + resource "aws_secretsmanager_secret" "this" {
+      + arn                            = (known after apply)
+      + description                    = "Zero Trust AI Lab secret: sam_gov_api_key (seeded post-apply)"
+      + force_overwrite_replica_secret = false
+      + id                             = (known after apply)
+      + name                           = "lab/sam_gov_api_key"
+      + name_prefix                    = (known after apply)
+      + policy                         = (known after apply)
+      + recovery_window_in_days        = 7
+      + tags                           = {
+          + "Name" = "lab/sam_gov_api_key"
+        }
+      + tags_all                       = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "lab/sam_gov_api_key"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+
+      + replica (known after apply)
+    }
+
+  # module.secrets.aws_secretsmanager_secret.this["webui_secret"] will be created
+  + resource "aws_secretsmanager_secret" "this" {
+      + arn                            = (known after apply)
+      + description                    = "Zero Trust AI Lab secret: webui_secret (seeded post-apply)"
+      + force_overwrite_replica_secret = false
+      + id                             = (known after apply)
+      + name                           = "lab/webui_secret"
+      + name_prefix                    = (known after apply)
+      + policy                         = (known after apply)
+      + recovery_window_in_days        = 7
+      + tags                           = {
+          + "Name" = "lab/webui_secret"
+        }
+      + tags_all                       = {
+          + "Env"       = "lab"
+          + "ManagedBy" = "terraform"
+          + "Name"      = "lab/webui_secret"
+          + "Owner"     = "optimal-llc"
+          + "Project"   = "ai-lab"
+        }
+
+      + replica (known after apply)
+    }
+
+Plan: 65 to add, 0 to change, 0 to destroy.
+
+Changes to Outputs:
+  + chat_host_instance_id    = (known after apply)
+  + egress_mode              = "proxy"
+  + gateway_host_instance_id = (known after apply)
+  + gateway_host_private_ip  = (known after apply)
+  + proxy_private_ip         = (known after apply)
+  + secret_arns              = {
+      + anthropic_api_key               = (known after apply)
+      + cloudflare_tunnel_token_chat    = (known after apply)
+      + cloudflare_tunnel_token_gateway = (known after apply)
+      + gateway_host_private_ip         = (known after apply)
+      + litellm_master_key              = (known after apply)
+      + litellm_salt_key                = (known after apply)
+      + litellm_virtual_key_webui       = (known after apply)
+      + okta_cf_client_id               = (known after apply)
+      + okta_cf_client_secret           = (known after apply)
+      + okta_litellm_client_id          = (known after apply)
+      + okta_litellm_client_secret      = (known after apply)
+      + okta_tenant_url                 = (known after apply)
+      + openai_api_key                  = (known after apply)
+      + postgres_password               = (known after apply)
+      + sam_gov_api_key                 = (known after apply)
+      + webui_secret                    = (known after apply)
+    }
+  + ssm_session_hint         = (known after apply)
+  + vpc_id                   = (known after apply)
+
+─────────────────────────────────────────────────────────────────────────────
+
+Saved the plan to: tfplan
+
+To perform exactly these actions, run the following command to apply:
+    terraform apply "tfplan"
