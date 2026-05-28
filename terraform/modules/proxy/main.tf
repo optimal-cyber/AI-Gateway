@@ -16,8 +16,10 @@ locals {
     "ec2messages.${var.region}.amazonaws.com",
     "secretsmanager.${var.region}.amazonaws.com",
     "logs.${var.region}.amazonaws.com",
-    "s3.${var.region}.amazonaws.com",
-    ".s3.${var.region}.amazonaws.com", # virtual-hosted buckets (AL2023 repos, SSM agent updates)
+    # Leading-dot covers BOTH the apex (s3.<region>.amazonaws.com) AND virtual-
+    # hosted buckets. Listing both forms makes Squid bail with "subdomain of"
+    # / "Bungled" and refuse to start. One s3 entry per form, leading-dot only.
+    ".s3.${var.region}.amazonaws.com",
     ".s3.dualstack.${var.region}.amazonaws.com",
   ]
 

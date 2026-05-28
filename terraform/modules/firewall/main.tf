@@ -18,7 +18,7 @@ locals {
     "ec2messages.${var.region}.amazonaws.com",
     "secretsmanager.${var.region}.amazonaws.com",
     "logs.${var.region}.amazonaws.com",
-    "s3.${var.region}.amazonaws.com",
+    # Mirror of proxy module's allowlist; leading-dot covers apex + subdomains.
     ".s3.${var.region}.amazonaws.com",
     ".s3.dualstack.${var.region}.amazonaws.com",
   ]
