@@ -98,7 +98,7 @@ resource "cloudflare_zero_trust_access_policy" "gateway_allow" {
 resource "cloudflare_zero_trust_access_application" "chat" {
   account_id       = var.cloudflare_account_id
   name             = "AI Lab — Chat"
-  domain           = "chat.lab.gooptimal.io"
+  domain           = "chat.lab.ironechelon.com"
   type             = "self_hosted"
   session_duration = "24h"
   policies = [{
@@ -112,7 +112,7 @@ resource "cloudflare_zero_trust_access_application" "chat" {
 resource "cloudflare_zero_trust_access_application" "gateway" {
   account_id       = var.cloudflare_account_id
   name             = "AI Lab — Gateway Admin"
-  domain           = "gateway.lab.gooptimal.io"
+  domain           = "gateway.lab.ironechelon.com"
   type             = "self_hosted"
   session_duration = "4h"
   policies = [{
@@ -143,7 +143,7 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "lab_chat" {
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.lab_chat.id
   config = {
     ingress = [
-      { hostname = "chat.lab.gooptimal.io", service = "http://open-webui:8080" },
+      { hostname = "chat.lab.ironechelon.com", service = "http://open-webui:8080" },
       { service = "http_status:404" },
     ]
   }
@@ -154,7 +154,7 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "lab_gateway" {
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.lab_gateway.id
   config = {
     ingress = [
-      { hostname = "gateway.lab.gooptimal.io", service = "http://litellm:4000" },
+      { hostname = "gateway.lab.ironechelon.com", service = "http://litellm:4000" },
       { service = "http_status:404" },
     ]
   }

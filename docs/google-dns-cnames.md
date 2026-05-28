@@ -1,77 +1,75 @@
-# Google Cloud DNS — the three `lab.` CNAMEs (Phase 4)
+# DNS for the lab — `lab.ironechelon.com` (Phase 4)
 
-> ## ⚠️ DO NOT TOUCH ANY EXISTING `gooptimal.io` RECORDS
-> `gooptimal.io` stays authoritative on **Google Cloud DNS** (ADR-008). You are
-> adding **exactly three** new record sets under the `lab.` namespace. Do **not**
-> modify, delete, or re-delegate: `outpost.gooptimal.io`, the apex `A`/`AAAA`, the
-> `MX` records, or any `SPF`/`DKIM`/`DMARC` `TXT` records, or anything else.
-> Adding `lab.*` records cannot affect production email or the newsletter — but
-> only if you add, never edit. A DNS mistake here should be contained to
-> `*.lab.gooptimal.io`.
+> **Filename note.** This file was originally `google-dns-cnames.md` because the
+> plan was to keep the lab on `lab.gooptimal.io` with DNS on Google. Cloudflare
+> Access requires the domain to be in a Cloudflare-managed zone (and Free-plan
+> subdomain zones aren't allowed), so the lab moved to `lab.ironechelon.com`,
+> which is already a Cloudflare zone. The filename is kept for git history;
+> see **ADR-010** in [`decisions.md`](decisions.md) for the full reasoning.
 
-## The three records
+## What's actually deployed
 
-| Name | Type | Value | TTL |
-|---|---|---|---|
-| `lab.gooptimal.io` | CNAME | `<pages-project>.pages.dev` | 300 |
-| `chat.lab.gooptimal.io` | CNAME | `<chat-tunnel-uuid>.cfargotunnel.com` | 300 |
-| `gateway.lab.gooptimal.io` | CNAME | `<gateway-tunnel-uuid>.cfargotunnel.com` | 300 |
+| Name | Type | Target | Where DNS lives | Proxy |
+|---|---|---|---|---|
+| `chat.lab.ironechelon.com` | CNAME | `bbb2c5f5-…cfargotunnel.com` (chat tunnel UUID) | **Cloudflare DNS** | **Proxied (orange)** |
+| `gateway.lab.ironechelon.com` | CNAME | `be116b19-…cfargotunnel.com` (gateway tunnel UUID) | **Cloudflare DNS** | **Proxied (orange)** |
+| `lab.ironechelon.com` *(landing — Phase 4.5)* | CNAME | `<pages-project>.pages.dev` | **Cloudflare DNS** | DNS-only or proxied — Pages handles it |
 
-Where the values come from:
-- `<pages-project>.pages.dev` — the Cloudflare Pages project (Phase 4.5,
-  `landing/README.md`), e.g. `ai-lab-landing.pages.dev`.
-- `<chat-tunnel-uuid>` / `<gateway-tunnel-uuid>` — the tunnel IDs from Phase 4
-  (Cloudflare dashboard → Zero Trust → Networks → Tunnels, or the Terraform
-  outputs `chat_tunnel_cname` / `gateway_tunnel_cname` in
-  `terraform/modules/cloudflare/outputs.tf`).
+The two app hostnames **must** be proxied (orange cloud) — that's what activates
+Cloudflare Access on the request path. Without it, traffic still flows through
+the tunnel, but Okta/MFA enforcement is bypassed entirely.
 
-> Note on `lab.gooptimal.io` itself: a CNAME at a name that also needs other
-> records is fine here because `lab` has no other records. Cloudflare Pages may
-> alternatively give you an apex-style target; follow whatever the Pages "custom
-> domain" screen shows for `lab.gooptimal.io` if it differs from the `.pages.dev`
-> CNAME above.
+## Where they were added
 
-## Add them in Google Cloud DNS
+In the Cloudflare dashboard:
+**Websites → `ironechelon.com` → DNS → Records → + Add record**
 
-1. Google Cloud Console → **Network Services → Cloud DNS** → select the
-   **`gooptimal.io`** managed zone.
-2. **Add Standard / Add record set** — once per row above:
-   - **DNS name:** `lab` (Cloud DNS appends `.gooptimal.io.`), then `chat.lab`,
-     then `gateway.lab`.
-   - **Resource record type:** `CNAME`
-   - **TTL:** `300` seconds
-   - **Canonical name / data:** the Value from the table (include the trailing
-     `.` if the console requires FQDN form, e.g. `<uuid>.cfargotunnel.com.`).
-3. Save each. Do not batch-edit the zone file; add discrete record sets so you
-   cannot accidentally alter a neighboring record.
+For each record:
+1. Type: `CNAME`
+2. Name: `chat.lab` or `gateway.lab` (Cloudflare appends `.ironechelon.com`)
+3. Target: the `<uuid>.cfargotunnel.com` value (no trailing dot in the CF UI; CF
+   handles it)
+4. Proxy status: **Proxied** for the app hostnames
+5. TTL: Auto
 
-### gcloud CLI equivalent (optional)
+Alternatively, via the API (requires `Zone DNS: Edit` scope, which the
+bootstrap token did not include — added in a follow-up token if desired):
 
 ```bash
-ZONE=gooptimal-io          # your Cloud DNS managed-zone name (not the domain)
-gcloud dns record-sets create chat.lab.gooptimal.io.    --zone="$ZONE" --type=CNAME --ttl=300 --rrdatas="<chat-tunnel-uuid>.cfargotunnel.com."
-gcloud dns record-sets create gateway.lab.gooptimal.io. --zone="$ZONE" --type=CNAME --ttl=300 --rrdatas="<gateway-tunnel-uuid>.cfargotunnel.com."
-gcloud dns record-sets create lab.gooptimal.io.         --zone="$ZONE" --type=CNAME --ttl=300 --rrdatas="<pages-project>.pages.dev."
+curl -X POST \
+  -H "Authorization: Bearer ${CF_API_TOKEN}" \
+  -H "Content-Type: application/json" \
+  --data '{"type":"CNAME","name":"chat.lab","content":"<uuid>.cfargotunnel.com","proxied":true,"ttl":1}' \
+  "https://api.cloudflare.com/client/v4/zones/${IRONECHELON_ZONE_ID}/dns_records"
 ```
-`create` (not `update`/`transaction`) only adds; it errors rather than clobbering
-an existing record — the safe choice here.
 
-## Verify (does not require the apps to be up)
+## Verify
 
 ```bash
-dig +short CNAME chat.lab.gooptimal.io @8.8.8.8
-# -> <chat-tunnel-uuid>.cfargotunnel.com.
-dig +short CNAME gateway.lab.gooptimal.io @8.8.8.8
-# -> <gateway-tunnel-uuid>.cfargotunnel.com.
-dig +short CNAME lab.gooptimal.io @8.8.8.8
-# -> <pages-project>.pages.dev.
+# Should resolve to Cloudflare anycast IPs (orange-cloud proxied):
+dig +short chat.lab.ironechelon.com    @8.8.8.8     # -> 104.21.x / 172.67.x
+dig +short gateway.lab.ironechelon.com @8.8.8.8     # -> 104.21.x / 172.67.x
 
-# sanity: confirm you did NOT disturb production
-dig +short MX gooptimal.io @8.8.8.8        # unchanged
-dig +short TXT gooptimal.io @8.8.8.8       # SPF/DMARC unchanged
-dig +short outpost.gooptimal.io @8.8.8.8   # unchanged
+# Sanity: gooptimal.io is untouched — production records intact:
+dig +short MX gooptimal.io              @8.8.8.8     # 1 smtp.google.com.
+dig +short TXT gooptimal.io             @8.8.8.8     # v=spf1 include:_spf.google.com ~all
+dig +short ai-security.gooptimal.io     @8.8.8.8     # optimal-cyber.github.io.
 ```
 
-Once the CNAMEs resolve and the tunnels/Pages project are live, browse to
-`https://chat.lab.gooptimal.io` → you should be redirected to Cloudflare Access →
-Okta. Run `scripts/test-sso.sh` for the structural checks.
+Once you browse to `https://chat.lab.ironechelon.com`, Cloudflare Access intercepts
+the request, redirects to Okta for authentication (with MFA), and only on success
+does the request reach `cloudflared` → `open-webui:8080`. The `gateway.lab.ironechelon.com`
+path enforces the stricter policy (`lab-admins` + MFA + US geo).
+
+## `gooptimal.io` is intentionally untouched
+
+The original ADR-008 plan had us add three CNAMEs in Google Cloud DNS under
+`lab.gooptimal.io`. Those CNAMEs were briefly added during the attempt and have
+been **removed**. The `gooptimal.io` zone today contains exactly what it did
+before this lab existed — apex, MX, SPF, DKIM, DMARC, `outpost`, `ai-security`,
+`compliance`, `api/app/auth/monitoring`, and the `*.gooptimal.io` wildcard are
+all in their original state.
+
+> **Do NOT** add `lab.gooptimal.io` records back. They no longer serve any
+> purpose — the lab is on `ironechelon.com` — and stray records would only
+> confuse the topology.

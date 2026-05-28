@@ -241,7 +241,8 @@ Cloudflare Access service tokens — wrong tool for interactive human admin logi
 
 ## ADR-008 — CNAMEs from Google DNS instead of full nameserver migration
 
-**Status:** Accepted (2026-05-27)
+**Status:** **Superseded by ADR-010** (2026-05-28). The original reasoning is
+preserved below for the audit trail; what was actually deployed is in ADR-010.
 
 **Context.** `gooptimal.io` is a live domain serving production GoOptimal services —
 `outpost.gooptimal.io` (newsletter), MX records (email), and SPF/DKIM/DMARC TXT
@@ -250,8 +251,9 @@ to Cloudflare). Delegating the apex would move *all* of those production records
 authority to Cloudflare, expanding blast radius far beyond this sandbox for zero
 lab benefit.
 
-**Decision.** Keep `gooptimal.io` authoritative on **Google Cloud DNS**. Add exactly
-three CNAME records under the `lab.` namespace pointing at Cloudflare targets:
+**Decision (original).** Keep `gooptimal.io` authoritative on **Google Cloud DNS**.
+Add exactly three CNAME records under the `lab.` namespace pointing at Cloudflare
+targets:
 
 | Name | → |
 |---|---|
@@ -267,15 +269,21 @@ radius to production email and the newsletter for a personal sandbox. (b) A sepa
 throwaway domain — loses the portfolio value of demonstrating on the real
 `gooptimal.io` brand and complicates the LinkedIn story.
 
-**Consequences.**
-- Production records (`outpost`, MX, SPF/DKIM/DMARC, apex) are **never touched** —
-  this constraint is restated in bold at the top of `docs/google-dns-cnames.md`.
+**Consequences (as originally intended).**
+- Production records (`outpost`, MX, SPF/DKIM/DMARC, apex) are **never touched**.
 - CNAME-to-tunnel (vs. Cloudflare-proxied A records) means no orange-cloud
   Cloudflare features on these hostnames beyond what Tunnel/Access provide — which
-  is exactly what we want here.
-- Tunnel UUIDs are only known after the tunnels exist (Phase 4), so the CNAME values
-  are filled in at that point.
-- A DNS misconfiguration is contained to `*.lab.gooptimal.io`.
+  is exactly what we wanted.
+- Tunnel UUIDs only known after the tunnels exist (Phase 4), so CNAMEs were filled
+  in at that point.
+- A DNS misconfiguration would have been contained to `*.lab.gooptimal.io`.
+
+**Why this didn't actually deploy.** Cloudflare Access requires the application
+domain to live in a Cloudflare-managed zone. Tunnel ingress works for any hostname,
+but the Access policies (which are the entire point of the identity-aware proxy)
+cannot bind to a domain Cloudflare doesn't host. Free-plan subdomain zones (e.g.
+adding only `lab.gooptimal.io` as its own zone) are rejected — that's an Enterprise
+feature. See ADR-010 for the actual deployed approach.
 
 ---
 
@@ -361,3 +369,65 @@ of NAT Gateway — ~$4/mo but operator-managed; rejected for the managed service
 - The allowlist is a Terraform variable (`egress_allowlist_domains`) — reviewable and
   diff-able, same property ADR-004 wanted.
 - Phase 2 Cloudflare Gateway upgrade path (docs/phase2.md) is unchanged.
+
+---
+
+## ADR-010 — Use `ironechelon.com` for the lab subdomain; landing intentionally on Cloudflare DNS
+
+**Status:** Accepted (2026-05-28). Supersedes ADR-008.
+
+**Context.** ADR-008 wanted the lab apps on `*.lab.gooptimal.io` with DNS still on
+Google so production records stayed isolated. When we hit Phase 4 (Cloudflare
+Access wiring), the design failed on a Cloudflare product limit:
+
+1. **Tunnel ingress** is account-scoped and accepts any hostname (set via API for
+   `chat.lab.gooptimal.io` and `gateway.lab.gooptimal.io` — that worked).
+2. **Access apps** are zone-scoped and **only accept domains in a Cloudflare-managed
+   zone** (API error `12130: domain does not belong to zone`). Without an Access
+   app on the hostname, the whole identity-aware proxy story collapses — that's
+   the *point* of the lab.
+3. **Free-plan subdomain zones** (e.g., adding only `lab.gooptimal.io` as its own
+   zone, with NS delegation from Google) are **rejected by Cloudflare Free** — the
+   onboarding requires a registrable apex. Subdomain zones are an Enterprise
+   feature.
+4. **Full nameserver migration of `gooptimal.io` to Cloudflare** would re-create
+   the original blast-radius problem (MX, SPF, DKIM, `outpost`, `ai-security`,
+   `compliance`, `api/app/auth`, and the apex wildcard would all move to a single
+   new vendor). ADR-008's original concern still applies.
+
+**Decision.** Move the lab subdomain to **`ironechelon.com`** (already an active
+Cloudflare zone on the same account). Use:
+
+| Name | → | Where DNS lives |
+|---|---|---|
+| `lab.ironechelon.com` | Cloudflare Pages (landing) | **Cloudflare DNS** |
+| `chat.lab.ironechelon.com` | `<chat-tunnel-uuid>.cfargotunnel.com` (proxied) | **Cloudflare DNS** |
+| `gateway.lab.ironechelon.com` | `<gateway-tunnel-uuid>.cfargotunnel.com` (proxied) | **Cloudflare DNS** |
+
+The two app CNAMEs are **proxied (orange cloud)** — that's what activates Access
+enforcement on the request path.
+
+**Alternatives reconsidered.**
+- *Keep gooptimal.io path with no Access* — defeats the entire purpose of the lab.
+- *Pay for Cloudflare Enterprise* — ~$2k/month minimum; not viable for a personal
+  reference design budgeted at ~$80/mo.
+- *Throwaway domain* — same brand-cost trade we considered originally; we already
+  have `ironechelon.com` paid for and active.
+
+**Consequences.**
+- `gooptimal.io` is **completely untouched** — same protection as ADR-008 intended.
+  No production records (MX, SPF, DKIM, `outpost`, `ai-security`, etc.) were ever
+  modified. Two CNAMEs were briefly added under `lab.gooptimal.io` during the
+  attempt and have been removed.
+- The Okta LiteLLM Admin app's redirect URI shifted to
+  `https://gateway.lab.ironechelon.com/sso/callback` (the Cloudflare Access Okta
+  app's redirect URI is tied to the team name `optimallabs`, so it didn't change).
+- The portfolio brand on the landing page splits slightly: lab apps under
+  `*.lab.ironechelon.com`, but the larger `Optimal, LLC / Optimal Labs` framing on
+  the landing page is unchanged. The trade is honest in `docs/linkedin-talking-points.md`.
+- Going forward the `lab.` namespace lives on Cloudflare DNS, so future labs
+  (`rag.lab`, `mcp-write.lab`, etc.) can be added there directly without DNS work
+  elsewhere.
+- `docs/google-dns-cnames.md` is now misleading-by-filename but useful as a record
+  of the original plan — kept (rather than deleted) so the git history remains
+  readable.
