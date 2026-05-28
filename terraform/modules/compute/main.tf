@@ -33,7 +33,7 @@ resource "aws_security_group" "app" {
 resource "aws_vpc_security_group_ingress_rule" "litellm_4000" {
   count             = length(var.app_subnet_cidrs)
   security_group_id = aws_security_group.app.id
-  description       = "LiteLLM gateway port, chat-host -> gateway-host within app subnet ${count.index}"
+  description       = "LiteLLM gateway port from app subnet ${count.index} (chat-host to gateway-host)"
   cidr_ipv4         = var.app_subnet_cidrs[count.index]
   from_port         = 4000
   to_port           = 4000
