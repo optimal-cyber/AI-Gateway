@@ -33,19 +33,32 @@ services:
       # (NOT a provider key — the provider keys never leave the gateway host).
       OPENAI_API_BASE_URL: "http://${LITELLM_HOST_IP}:4000/v1"
       OPENAI_API_KEY: "${LITELLM_VIRTUAL_KEY_WEBUI}"
-      # Keep HTTP(S)_PROXY pointing at Squid so any legitimate outbound at
-      # startup (embeddings ETag checks etc.) routes through the allowlist
-      # instead of getting dropped direct by the app SG. The trap to dodge is:
-      # the host's NO_PROXY uses CIDR (10.50.0.0/16), but Open WebUI's
-      # aiohttp does NOT honor CIDR in NO_PROXY — only exact hostnames /
-      # suffix patterns. So we must list the LiteLLM IP literally; otherwise
-      # the /v1/models call goes through Squid, Squid sees an RFC1918 host
-      # not in its dstdomain allowlist and returns a 403 HTML page, and
-      # Open WebUI shows "No models available". Same pattern as litellm on
-      # the gateway host. (ADR-009 footnote.)
-      HTTP_PROXY: "${HTTP_PROXY:-}"
-      HTTPS_PROXY: "${HTTPS_PROXY:-}"
-      NO_PROXY: "${NO_PROXY:-},${LITELLM_HOST_IP},localhost,127.0.0.1"
+      # Open WebUI's only outbound is to LiteLLM intra-VPC. Empty proxy env is
+      # honest. The trap to dodge: Open WebUI's HTTP client is aiohttp, and
+      # aiohttp's `trust_env=True` reads HTTP_PROXY but does NOT honor
+      # NO_PROXY at all — neither CIDR ranges nor exact hostnames. So once
+      # HTTP_PROXY is set, EVERY request is proxied (years-old upstream
+      # limitation). With HTTP_PROXY pointed at Squid, /v1/models gets a 403
+      # HTML page because 10.50.10.118 isn't in the Squid dstdomain allowlist,
+      # and the model picker stays empty.
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: ""
+      no_proxy: ""
+      # Companion to the empty proxy env: prevent boot-time outbound to
+      # huggingface.co (snapshot_download for the all-MiniLM embeddings model
+      # used by RAG). With no proxy and no direct egress allowed by the app
+      # SG, that connect would hang for the full TCP timeout — long enough
+      # for the healthcheck to mark the container unhealthy before Uvicorn
+      # gets a chance to bind 8080. Offline mode tells huggingface_hub /
+      # transformers to never touch the network and use cache only; with
+      # nothing cached, RAG features (embeddings, semantic search) simply
+      # stay disabled — fine for this lab, which uses LiteLLM-gateway chat
+      # only. (See ADR-009 footnote on outbound architecture.)
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
     volumes:
       - open-webui-data:/app/backend/data
     healthcheck:
