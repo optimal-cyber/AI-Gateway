@@ -73,7 +73,7 @@ The rest of this doc is the click-path equivalent.
 |---|---|
 | Application name | `AI Lab — Chat` |
 | Session duration | **24h** |
-| Application domain | `chat.ironechelon.com` |
+| Application domain | `chat.optimallabs.io` |
 | Identity providers | **Okta only** (untick others) |
 | Instant Auth / accept all available IdPs | off (Okta only) |
 
@@ -101,7 +101,7 @@ the tunnel.
 |---|---|
 | Application name | `AI Lab — Gateway Admin` |
 | Session duration | **4h** |
-| Application domain | `gateway.ironechelon.com` |
+| Application domain | `gateway.optimallabs.io` |
 | Identity providers | **Okta only** |
 
 **Policies:**

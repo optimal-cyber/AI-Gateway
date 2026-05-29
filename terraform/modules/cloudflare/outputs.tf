@@ -3,12 +3,12 @@
 # (docs/google-dns-cnames.md). DNS itself stays in Google (ADR-008).
 #
 # output "chat_tunnel_cname" {
-#   description = "chat.ironechelon.com  CNAME ->"
+#   description = "chat.optimallabs.io  CNAME ->"
 #   value       = "${cloudflare_zero_trust_tunnel_cloudflared.lab_chat.id}.cfargotunnel.com"
 # }
 #
 # output "gateway_tunnel_cname" {
-#   description = "gateway.ironechelon.com  CNAME ->"
+#   description = "gateway.optimallabs.io  CNAME ->"
 #   value       = "${cloudflare_zero_trust_tunnel_cloudflared.lab_gateway.id}.cfargotunnel.com"
 # }
 #

@@ -20,8 +20,8 @@ Two automation helpers cover the protocol-level and shell parts:
 
 | ID | Scenario | Pass criteria | Artifact |
 |---|---|---|---|
-| T-SSO-1 | Unauthenticated browser → `chat.ironechelon.com` | 302 to `*.cloudflareaccess.com`; Okta login screen; MFA prompt; lands in Open WebUI as `ryan@…` | Screenshots: redirect, Okta, MFA, Open WebUI signed-in |
-| T-SSO-2 | User in `lab-users` only → `gateway.ironechelon.com` | Cloudflare Access **Block** page naming the gateway policy | Screenshot of block page |
+| T-SSO-1 | Unauthenticated browser → `chat.optimallabs.io` | 302 to `*.cloudflareaccess.com`; Okta login screen; MFA prompt; lands in Open WebUI as `ryan@…` | Screenshots: redirect, Okta, MFA, Open WebUI signed-in |
+| T-SSO-2 | User in `lab-users` only → `gateway.optimallabs.io` | Cloudflare Access **Block** page naming the gateway policy | Screenshot of block page |
 | T-SSO-3 | `lab-admins` admin from non-US IP (use a VPN) → gateway | Blocked by the geo Require rule | Screenshot of block + Access log line showing `geo` failure |
 | T-SSO-4 | `lab-admins` admin, WARP not enrolled → gateway | Blocked by device-posture Require | Screenshot of block + Access log line showing posture failure |
 | T-SSO-5 | LiteLLM admin UI sign-in (Okta direct OIDC) | Successful sign-in; UI shows `proxy_admin` role for `lab-admins` | Screenshot of admin UI showing role |
@@ -91,14 +91,14 @@ Automation:
 
 ## 5. Audit-trail correlation (the LinkedIn money shot)
 
-**T-AUDIT-1.** Sign in to `chat.ironechelon.com` as `ryan@…`, complete Okta MFA,
+**T-AUDIT-1.** Sign in to `chat.optimallabs.io` as `ryan@…`, complete Okta MFA,
 send the prompt **"Look up Optimal, LLC by CAGE 14HQ0."**, and gather the four
 correlated records below tied together by your email + a timestamp window.
 
 | # | System | What to capture | Where |
 |---|---|---|---|
 | 1 | **Okta System Log** | `user.authentication.sso` event with `mfa` factor and target app `AI Lab — Cloudflare Access` | Okta Admin → Reports → System Log |
-| 2 | **Cloudflare Access log** | `Allow` for the same email on `chat.ironechelon.com`, **policy = `allow-lab-users`** | Zero Trust → Logs → Access |
+| 2 | **Cloudflare Access log** | `Allow` for the same email on `chat.optimallabs.io`, **policy = `allow-lab-users`** | Zero Trust → Logs → Access |
 | 3 | **Open WebUI** | The chat session/thread attributed to `ryan@…` (came from `Cf-Access-Authenticated-User-Email`) | Open WebUI session view |
 | 4 | **LiteLLM request log + MCP audit** | LiteLLM row (vkey, end_user email, model, NeMo `activated_rails=[]`) **plus** the MCP `structlog` JSON line for the `sam_gov_lookup` call | LiteLLM Postgres / admin UI + container logs |
 

@@ -79,7 +79,7 @@ services:
       # /root/.docker/config.json `proxies` block auto-injects HTTP(S)_PROXY into
       # every container. cloudflared's Go HTTP transport would then route origin
       # requests (http://open-webui:8080) through Squid; Squid sees the Host
-      # header chat.ironechelon.com which is NOT in its allowlist and returns
+      # header chat.optimallabs.io which is NOT in its allowlist and returns
       # 403, so users hit a Squid "Access Denied" page after Okta auth.
       HTTP_PROXY: ""
       HTTPS_PROXY: ""

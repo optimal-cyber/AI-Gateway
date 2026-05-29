@@ -54,9 +54,9 @@ graph TD
     OK[Okta<br/>OIDC · MFA · groups]
     CT[Cloudflare Tunnel<br/>cloudflared · no public ingress]
 
-    LAB["ironechelon.com<br/>Cloudflare Pages"]
-    CHAT["chat.ironechelon.com<br/>Open WebUI · 127.0.0.1<br/>trusted-header SSO"]
-    GW["gateway.ironechelon.com<br/>LiteLLM admin<br/>direct OIDC"]
+    LAB["optimallabs.io<br/>Cloudflare Pages"]
+    CHAT["chat.optimallabs.io<br/>Open WebUI · 127.0.0.1<br/>trusted-header SSO"]
+    GW["gateway.optimallabs.io<br/>LiteLLM admin<br/>direct OIDC"]
 
     NEMO[NeMo Guardrails<br/>DaaS · fail-closed]
     MCP[compliance-mcp<br/>read-only]
@@ -85,10 +85,10 @@ graph TD
     SQUID --> NAT --> IGW
 ```
 
-**DNS:** the lab hostnames live in **Cloudflare DNS under `ironechelon.com`**.
+**DNS:** the lab hostnames live in **Cloudflare DNS under `optimallabs.io`**.
 Cloudflare Access requires the application domain to be on a Cloudflare-managed
 zone (subdomain zones on Free aren't permitted), so the original `lab.gooptimal.io`
-plan ([ADR-008](docs/decisions.md)) was pivoted to `ironechelon.com`
+plan ([ADR-008](docs/decisions.md)) was pivoted to `optimallabs.io`
 ([ADR-010](docs/decisions.md)). `gooptimal.io` is **untouched** — apex, MX, SPF,
 DKIM, DMARC, `outpost`, `ai-security`, etc. all in their original Google DNS
 state, which was the protection ADR-008 wanted.
@@ -146,7 +146,7 @@ and the `litellm_call_id` (see [`docs/sso-role-mapping.md`](docs/sso-role-mappin
 | `dig` | DNS verification |
 
 External accounts you will need: **AWS** (this lab uses account `317839577064`),
-**Cloudflare** (free tier, with an active zone — `ironechelon.com` in this build),
+**Cloudflare** (free tier, with an active zone — `optimallabs.io` in this build),
 **Okta Developer** (free Workforce Identity tenant), and **GitHub** (for source +
 Pages). **OpenAI / Anthropic** keys for the providers and a **SAM.gov** API key
 for the compliance MCP.
@@ -270,7 +270,7 @@ Cloudflare Pages + Cloudflare Zero Trust (single seat) + Okta Developer are all
 - **MCP write mode** — per the prerequisites in
   [`docs/mcp-write-mode.md`](docs/mcp-write-mode.md). A separate security
   project, not a feature flag.
-- **`rag.ironechelon.com`** — a second app under the same `lab.` namespace
+- **`rag.optimallabs.io`** — a second app under the same `lab.` namespace
   exercising retrieval-augmented generation against the same MCP evidence
   store. The DNS pattern already supports it.
 - **Remote Terraform state** (S3 + DynamoDB) if the lab ever holds anything
@@ -287,7 +287,7 @@ Cloudflare Pages + Cloudflare Zero Trust (single seat) + Okta Developer are all
 | 2 | Docker Compose stacks (Open WebUI, LiteLLM, NeMo, MCP) | ✅ stacks validate; detectors 23/23 |
 | 3 | Compliance MCP server (the differentiator) | ✅ 47 tests, 88% cov |
 | 4 | Cloudflare config (tunnels, Access apps, Gateway, DNS) | ✅ runbooks + DNS |
-| 4.5 | Landing page at `ironechelon.com` | ✅ static, ~10kb |
+| 4.5 | Landing page at `optimallabs.io` | ✅ static, ~10kb |
 | 5 | Test plan + smoke-test script | ✅ documented |
 | 6 | Full README + LinkedIn talking points | ✅ this file |
 

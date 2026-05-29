@@ -111,7 +111,7 @@ services:
       # reach docker.io for image manifests) auto-injects HTTP(S)_PROXY into
       # every container. cloudflared's Go HTTP transport would then route
       # origin requests (http://litellm:4000) through Squid; Squid sees the
-      # Host header gateway.ironechelon.com which is NOT in its allowlist and
+      # Host header gateway.optimallabs.io which is NOT in its allowlist and
       # returns 403, so users hit a Squid "Access Denied" page after Okta auth.
       # Tunnel data plane uses port 7844 direct (SG-allowed); origin is intra-
       # docker; cloudflared doesn't need a proxy.

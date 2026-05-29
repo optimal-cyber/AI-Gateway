@@ -71,7 +71,7 @@ case "${AI_LAB_ROLE}" in
     # producing a malformed URL like https://x.comhttps://x.com/oauth2/v1/authorize.
     # GENERIC_* alone is the documented setup; the URL already contains the tenant.
     OKTA_URL="$(secret okta_tenant_url)"
-    put PROXY_BASE_URL              "https://gateway.ironechelon.com"
+    put PROXY_BASE_URL              "https://gateway.optimallabs.io"
     put GENERIC_CLIENT_ID           "$(secret okta_litellm_client_id)"
     put GENERIC_CLIENT_SECRET       "$(secret okta_litellm_client_secret)"
     put GENERIC_AUTHORIZATION_ENDPOINT "${OKTA_URL}/oauth2/v1/authorize"

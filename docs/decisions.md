@@ -569,3 +569,93 @@ The resource picks via `lookup(var.instance_type_overrides, each.key, var.instan
 - **Detection capability uplift:** with NeMo SDK loaded, T-GR-* tests now
   produce both deterministic findings AND populated `activated_rails` audit
   records — the LinkedIn / 3PAO walkthrough story gets concretely better.
+
+
+## ADR-013 — Move the lab to `optimallabs.io`; deprecate `ironechelon.com`
+
+**Date:** 2026-05-29
+**Status:** Accepted
+**Supersedes / amends:** ADR-010 (operationally — `ironechelon.com` was always
+the placeholder), ADR-011 (cert constraint reasoning still applies, now to
+`*.optimallabs.io`).
+
+### Context
+
+`ironechelon.com` was registered as a workaround when `gooptimal.io` couldn't
+host the lab subdomain on Cloudflare Free tier without paying for Advanced
+Certificate Manager (ADR-010). The build proceeded under that placeholder, but
+the user's actual brand for AI lab / product work is **Optimal Labs** (LLC =
+Optimal, LLC). Shipping a portfolio artifact under `chat.ironechelon.com` reads
+as "who is this?" to anyone landing from LinkedIn. After T-SSO-1 passed
+end-to-end (see commit dc45d0b path), the user purchased `optimallabs.io` from
+Cloudflare Registrar ($50/yr at-cost) for the cleaner brand match. The zone
+landed in the same Cloudflare account, so no nameserver gymnastics — the swap is
+just plumbing.
+
+### Decision
+
+Move all lab hostnames to `optimallabs.io`:
+
+| Old (placeholder) | New (live) |
+|---|---|
+| `chat.ironechelon.com` | `chat.optimallabs.io` |
+| `gateway.ironechelon.com` | `gateway.optimallabs.io` |
+| `lab.ironechelon.com` (landing, never deployed) | n/a — landing TBD on `optimallabs.io` |
+
+**Strategy:** add-then-deprecate, zero downtime. We added the new hostnames as
+additional destinations on the existing Cloudflare Access apps (the newer Access
+UI supports up to 5 destinations per app — we did NOT need parallel apps with
+duplicated policies, which was our first attempted approach before catching the
+multi-destination support). The existing reusable policies (`allow-lab-users-or-admins`
+for chat, `allow-lab-admins-strict` for gateway) enforce both hostnames
+automatically. The existing Cloudflare Tunnel `lab-chat` and `lab-gateway` got
+the new public-hostname routes alongside the ironechelon ones, so the tunnel
+tokens in Secrets Manager (`lab/cloudflare_tunnel_token_chat`,
+`lab/cloudflare_tunnel_token_gateway`) needed no change.
+
+**Okta:** added `https://gateway.optimallabs.io/sso/key/generate` to the
+LiteLLM admin OIDC app's Sign-in redirect URIs alongside the existing
+ironechelon entry. The `[CF Access] Cloudflare Access` OIDC app (used for chat
+SSO) has no host-bound URI to change — Access handles the redirect at the
+Cloudflare layer.
+
+**Repo:** blind search-and-replace `ironechelon.com → optimallabs.io` and
+`ironechelon → optimallabs` across 14 files (compose, secrets-bootstrap,
+README, scripts, terraform module comments, docs other than this file). This
+file (`docs/decisions.md`) was intentionally left alone so ADR-010 and ADR-011
+remain accurate history.
+
+**LiteLLM:** `PROXY_BASE_URL` in `secrets-bootstrap.sh` flipped from
+`https://gateway.ironechelon.com` to `https://gateway.optimallabs.io`; the
+gateway-host's `ai-lab-secrets@gateway` unit regenerates the tmpfs `.env` and a
+LiteLLM container recreate picks up the new value (LiteLLM uses this as the
+allowed redirect target after Okta OIDC).
+
+### Consequences
+
+- **Effective immediately:** `https://chat.optimallabs.io` and
+  `https://gateway.optimallabs.io` serve the lab end-to-end with the same Okta
+  IdP and policies.
+- **Fallback window:** `chat.ironechelon.com` and `gateway.ironechelon.com`
+  keep working through the deprecation period (same tunnels, same Access apps,
+  same policies) so an in-progress LinkedIn draft or shared screenshot doesn't
+  404 the moment we cut over.
+- **`gooptimal.io` still untouched.** Same protection ADR-008 originally wanted
+  — email/marketing zone stays clean.
+- **Cleanup TODO:** once we ship the LinkedIn post with the optimallabs URLs:
+  - Remove `chat.ironechelon.com` / `gateway.ironechelon.com` from the two
+    tunnels' Published application routes.
+  - Remove the ironechelon hostnames from the two Access apps' Destinations
+    (leaving each app with only its optimallabs hostname).
+  - Remove the ironechelon redirect URI from the Okta LiteLLM app.
+  - Delete the orphaned reusable policy `AI Lab — Chat (optimallabs)` that
+    was created during the failed parallel-app attempt before we caught the
+    multi-destination support.
+  - Optionally: let `ironechelon.com` lapse at next renewal (no specific value
+    in keeping it once unused).
+
+**Lesson captured for `docs/linkedin-talking-points.md`:** the cost of pivoting
+DNS late in a build is much lower than you fear when (a) both old and new zones
+live in the same Cloudflare account, and (b) the Access app destination model
+supports multi-hostname so policies can be shared. The whole swap was ~30 min
+of dashboard work and one 60-second SSM redeploy.
