@@ -65,9 +65,13 @@ case "${AI_LAB_ROLE}" in
     put DATABASE_URL                "postgresql://litellm:${PG_PW}@postgres:5432/litellm"
     put CLOUDFLARE_TUNNEL_TOKEN     "$(secret cloudflare_tunnel_token_gateway)"
     # Okta (LiteLLM admin OIDC, direct — ADR-007)
+    # OKTA_URL is a shell-only intermediate used to build the GENERIC_* URLs.
+    # Do NOT put OKTA_TENANT_URL into the env — in LiteLLM >= 1.86 it triggers
+    # the Okta-specific SSO path which prepends it to GENERIC_AUTHORIZATION_ENDPOINT,
+    # producing a malformed URL like https://x.comhttps://x.com/oauth2/v1/authorize.
+    # GENERIC_* alone is the documented setup; the URL already contains the tenant.
     OKTA_URL="$(secret okta_tenant_url)"
     put PROXY_BASE_URL              "https://gateway.ironechelon.com"
-    put OKTA_TENANT_URL             "${OKTA_URL}"
     put GENERIC_CLIENT_ID           "$(secret okta_litellm_client_id)"
     put GENERIC_CLIENT_SECRET       "$(secret okta_litellm_client_secret)"
     put GENERIC_AUTHORIZATION_ENDPOINT "${OKTA_URL}/oauth2/v1/authorize"
