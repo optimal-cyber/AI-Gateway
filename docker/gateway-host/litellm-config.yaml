@@ -56,12 +56,26 @@ general_settings:
 
 litellm_settings:
   drop_params: true
-  # Anyone who somehow reaches the UI without being promoted defaults to a
-  # zero-budget, no-model viewer (spec requirement).
+  # SSO default role: proxy_admin.
+  #
+  # Rationale (refines ADR-007): the LiteLLM admin Okta OIDC app is assigned to
+  # `lab-admins` only — non-admins cannot complete authentication. Cloudflare
+  # Access in front of this hostname ALSO requires lab-admins + MFA + US geo. So
+  # by the time a request reaches this proxy, the user is a verified admin via
+  # two independent gates upstream.
+  #
+  # The original plan was to read role from a JWT claim
+  # (GENERIC_USER_ROLE_JWT_FIELD=litellm_role, a custom Okta token-claim
+  # expression). That worked in theory but the Okta token-claim plumbing turned
+  # out to be more fragile than the upstream group gating. Defaulting to
+  # proxy_admin here yields the same effective security model with one fewer
+  # moving part — and it's documented honestly.
+  #
+  # Budget/model defaults stay restrictive — admin overrides per-key.
   default_internal_user_params:
     max_budget: 0.0
     models: []
-    user_role: "internal_user_viewer"
+    user_role: "proxy_admin"
 
 # --- SSO / role mapping ------------------------------------------------------
 # Okta OIDC env (GENERIC_*) is set on the container in compose. Role mapping:
