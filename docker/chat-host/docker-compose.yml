@@ -33,22 +33,19 @@ services:
       # (NOT a provider key — the provider keys never leave the gateway host).
       OPENAI_API_BASE_URL: "http://${LITELLM_HOST_IP}:4000/v1"
       OPENAI_API_KEY: "${LITELLM_VIRTUAL_KEY_WEBUI}"
-      # IMPORTANT: EXPLICITLY unset the proxy env, otherwise the docker daemon's
-      # /root/.docker/config.json `proxies` block (set so BuildKit could fetch
-      # docker.io image manifests) auto-injects HTTP(S)_PROXY into every
-      # container. Open WebUI's Python aiohttp client would then route
-      # http://<litellm-private-ip>:4000/v1/models through Squid; Squid sees
-      # an RFC1918 host not in its dstdomain allowlist and returns a 403 HTML
-      # page, so /v1/models call fails and the model picker shows
-      # "No models available". Open WebUI has no outbound use case — it only
-      # talks to LiteLLM intra-VPC — so empty proxy env is correct.
-      # Same pattern used by cloudflared on both hosts (ADR-009 footnote).
-      HTTP_PROXY: ""
-      HTTPS_PROXY: ""
-      http_proxy: ""
-      https_proxy: ""
-      NO_PROXY: ""
-      no_proxy: ""
+      # Keep HTTP(S)_PROXY pointing at Squid so any legitimate outbound at
+      # startup (embeddings ETag checks etc.) routes through the allowlist
+      # instead of getting dropped direct by the app SG. The trap to dodge is:
+      # the host's NO_PROXY uses CIDR (10.50.0.0/16), but Open WebUI's
+      # aiohttp does NOT honor CIDR in NO_PROXY — only exact hostnames /
+      # suffix patterns. So we must list the LiteLLM IP literally; otherwise
+      # the /v1/models call goes through Squid, Squid sees an RFC1918 host
+      # not in its dstdomain allowlist and returns a 403 HTML page, and
+      # Open WebUI shows "No models available". Same pattern as litellm on
+      # the gateway host. (ADR-009 footnote.)
+      HTTP_PROXY: "${HTTP_PROXY:-}"
+      HTTPS_PROXY: "${HTTPS_PROXY:-}"
+      NO_PROXY: "${NO_PROXY:-},${LITELLM_HOST_IP},localhost,127.0.0.1"
     volumes:
       - open-webui-data:/app/backend/data
     healthcheck:
