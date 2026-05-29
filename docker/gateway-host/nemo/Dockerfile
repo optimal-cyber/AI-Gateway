@@ -16,7 +16,14 @@ RUN pip install --no-cache-dir \
       "nemoguardrails>=0.11,<0.20" \
       "fastapi>=0.110" \
       "uvicorn[standard]>=0.29" \
-      "pydantic>=2.6"
+      "pydantic>=2.6" \
+      "dataclasses-json>=0.6"
+# dataclasses-json is a transitive dep of nemoguardrails' internals (used by
+# its langchain integration). Some 0.11.x releases ship it as a hard dep and
+# some don't, depending on the resolver path. Pinning it here makes the SDK
+# import deterministic; without it the FastAPI service still starts and the
+# deterministic detectors still enforce, but `nemo_enabled` stays false and
+# the `activated_rails` audit field is empty.
 
 COPY detectors.py server.py ./
 COPY config/ ./config/

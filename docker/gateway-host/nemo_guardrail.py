@@ -49,7 +49,18 @@ TIMEOUT = float(os.environ.get("NEMO_GUARDRAIL_TIMEOUT", "10"))
 class NemoDaaSGuardrail(CustomGuardrail):  # type: ignore[misc]
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self._client = httpx.AsyncClient(timeout=TIMEOUT)
+        # trust_env=False: ignore HTTP(S)_PROXY/NO_PROXY env entirely. The NeMo
+        # URL is always an intra-docker service name (nemo-guardrails:8000),
+        # never an internet host. httpx's NO_PROXY matching has historically
+        # been fragile for bare service-name hosts (with-port netloc vs.
+        # without-port pattern), so when the litellm container has HTTP_PROXY
+        # pointed at Squid for legitimate provider egress, httpx silently
+        # routes the guardrail call through Squid too. Squid doesn't resolve
+        # docker-internal hostnames and returns 403, which trips this code's
+        # fail-closed branch on every request — guardrail looks "down" even
+        # though both services are up. Bypassing env for this client makes
+        # the intra-docker call deterministic.
+        self._client = httpx.AsyncClient(timeout=TIMEOUT, trust_env=False)
 
     # -- helpers -----------------------------------------------------------
     async def _check(self, role: str, content: str,
