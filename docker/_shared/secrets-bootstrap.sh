@@ -83,7 +83,14 @@ case "${AI_LAB_ROLE}" in
     # "Cannot supply multiple client credentials" (invalid_request).
     put GENERIC_INCLUDE_CLIENT_ID   "false"
     put GENERIC_SCOPE               "openid email profile groups"
-    put GENERIC_USER_ROLE_JWT_FIELD "groups"
+    # Point at a derived single-string claim (configured in Okta as a custom
+    # token claim via expression: isMemberOfGroupName("lab-admins") ?
+    #   "proxy_admin" : "internal_user_viewer").
+    # The raw 'groups' claim is a list, and LiteLLM doesn't iterate lists for
+    # role matching — it treats the field value as a single string. Without the
+    # derived claim, LiteLLM always falls back to internal_user_viewer and
+    # admin_only mode blocks the user out of /ui.
+    put GENERIC_USER_ROLE_JWT_FIELD "litellm_role"
     ;;
   *)
     echo "unknown AI_LAB_ROLE=${AI_LAB_ROLE}" >&2; exit 1 ;;
