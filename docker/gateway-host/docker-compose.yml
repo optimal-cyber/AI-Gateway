@@ -106,12 +106,21 @@ services:
     command: ["tunnel", "--no-autoupdate", "run"]
     environment:
       TUNNEL_TOKEN: "${CLOUDFLARE_TUNNEL_TOKEN}"
-      # IMPORTANT: do NOT set HTTP(S)_PROXY here. cloudflared's Go HTTP transport
-      # would otherwise route origin requests (http://litellm:4000) through Squid,
-      # which has no idea about gateway.ironechelon.com and returns 403. The
-      # tunnel data plane uses port 7844 direct (SG-allowed) — no proxy needed.
-      # The api.cloudflare.com auto-update probe will fail (degraded transport)
-      # without a proxy, which is just a warning, not a tunnel-blocker.
+      # IMPORTANT: EXPLICITLY unset the proxy env, otherwise the docker daemon's
+      # /root/.docker/config.json `proxies` block (which we set so BuildKit can
+      # reach docker.io for image manifests) auto-injects HTTP(S)_PROXY into
+      # every container. cloudflared's Go HTTP transport would then route
+      # origin requests (http://litellm:4000) through Squid; Squid sees the
+      # Host header gateway.ironechelon.com which is NOT in its allowlist and
+      # returns 403, so users hit a Squid "Access Denied" page after Okta auth.
+      # Tunnel data plane uses port 7844 direct (SG-allowed); origin is intra-
+      # docker; cloudflared doesn't need a proxy.
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      http_proxy: ""
+      https_proxy: ""
+      NO_PROXY: ""
+      no_proxy: ""
     depends_on:
       litellm:
         condition: service_started
