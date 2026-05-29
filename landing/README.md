@@ -1,4 +1,4 @@
-# Landing page — `lab.ironechelon.com`
+# Landing page — `ironechelon.com`
 
 Static single-page site for Cloudflare Pages. **Intentionally public** — it's the
 "what is this thing" page someone hits from a LinkedIn link before they ask for
@@ -20,7 +20,7 @@ Connected to the GitHub repo (`optimal-cyber/AI-Lab`), Pages auto-deploys on pus
    - **Build command:** *(empty)*
    - **Build output directory:** `landing`
 4. Deploy → you get `https://<project>.pages.dev` (e.g. `ai-lab-landing.pages.dev`).
-5. **Custom domains → Set up a custom domain →** `lab.ironechelon.com`. Cloudflare
+5. **Custom domains → Set up a custom domain →** `ironechelon.com`. Cloudflare
    shows the exact CNAME target; put it in **Google Cloud DNS** per
    [`docs/google-dns-cnames.md`](../docs/google-dns-cnames.md). DNS stays in Google
    (ADR-008).

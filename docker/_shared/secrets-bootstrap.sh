@@ -66,7 +66,7 @@ case "${AI_LAB_ROLE}" in
     put CLOUDFLARE_TUNNEL_TOKEN     "$(secret cloudflare_tunnel_token_gateway)"
     # Okta (LiteLLM admin OIDC, direct — ADR-007)
     OKTA_URL="$(secret okta_tenant_url)"
-    put PROXY_BASE_URL              "https://gateway.lab.ironechelon.com"
+    put PROXY_BASE_URL              "https://gateway.ironechelon.com"
     put OKTA_TENANT_URL             "${OKTA_URL}"
     put GENERIC_CLIENT_ID           "$(secret okta_litellm_client_id)"
     put GENERIC_CLIENT_SECRET       "$(secret okta_litellm_client_secret)"

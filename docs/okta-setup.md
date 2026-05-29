@@ -60,7 +60,7 @@ Some placeholders are not known until later phases — fill them in then:
 2. Settings:
    - Name: `AI Lab — LiteLLM Admin`
    - Grant type: **Authorization Code**
-   - **Sign-in redirect URI:** `https://gateway.lab.ironechelon.com/sso/callback`
+   - **Sign-in redirect URI:** `https://gateway.ironechelon.com/sso/callback`
    - **Assignments:** Limit access to selected groups → **`lab-admins` only**
      (the chat-only `lab-users` must not reach the gateway admin app)
 3. Save and capture:

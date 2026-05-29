@@ -8,7 +8,7 @@ three planes. This is the "explain it to a fellow assessor" doc.
 
 ## Role mapping matrix
 
-| Okta group | Cloudflare Access — Chat (`chat.lab`) | Cloudflare Access — Gateway (`gateway.lab`) | Open WebUI role | LiteLLM admin role |
+| Okta group | Cloudflare Access — Chat (`chat`) | Cloudflare Access — Gateway (`gateway`) | Open WebUI role | LiteLLM admin role |
 |---|---|---|---|---|
 | `lab-users` | ✅ Allow (24h session) | ⛔ Blocked (not in `lab-admins`) | `user` (from trusted email header) | n/a (can't reach the admin UI) |
 | `lab-admins` | ✅ Allow | ✅ Allow **iff** also MFA + WARP + US geo | `user` | `proxy_admin` |
@@ -44,7 +44,7 @@ header; the gateway admin independently verifies the Okta token.
                          │  validates token, evaluates policy,      │
                          │  mints a signed Access JWT               │
                          └───────┬───────────────────────┬─────────┘
-              chat.lab           │                       │   gateway.lab
+              chat           │                       │   gateway
         (group lab-users)        │                       │   (lab-admins+MFA+WARP+US)
                                  ▼                       ▼
         ┌──────────────────────────────┐   ┌──────────────────────────────────┐
@@ -75,7 +75,7 @@ the join key that threads through every downstream system.
 
 ## Audit-trail story (one prompt, four correlated records)
 
-A user in `lab-users` opens `chat.lab.ironechelon.com`, completes Okta MFA, and
+A user in `lab-users` opens `chat.ironechelon.com`, completes Okta MFA, and
 sends one prompt. That single action leaves a correlated trail you can stitch
 together by **email + timestamp**:
 
@@ -83,7 +83,7 @@ together by **email + timestamp**:
    **MFA factor** used (Okta Verify) and the target app (`AI Lab — Cloudflare
    Access`). *Proves who authenticated and how.*
 2. **Cloudflare Access log** (Zero Trust → Logs → Access) — an `Allow` event for
-   `ryan@…` on `chat.lab.ironechelon.com`, **policy matched = `allow-lab-users`**,
+   `ryan@…` on `chat.ironechelon.com`, **policy matched = `allow-lab-users`**,
    IdP = Okta, session id. *Proves the authorization decision at the edge.*
 3. **Open WebUI** — the chat/session is attributed to `ryan@…` (identity came
    from `Cf-Access-Authenticated-User-Email`). *Proves app-level attribution.*
@@ -97,7 +97,7 @@ OpenWebUI.user == LiteLLM.end_user`. One email, four systems, one timeline.
 This correlation is the strongest single artifact for the Phase 5 demo
 (see `docs/test-plan.md` → audit-trail test) and the LinkedIn post.
 
-For the strict path, swap step 2 for an `Allow` on `gateway.lab.ironechelon.com`
+For the strict path, swap step 2 for an `Allow` on `gateway.ironechelon.com`
 with **policy `allow-lab-admins-strict`** (showing the MFA + WARP + US
 requirements all matched), and add a fifth record: the **LiteLLM admin UI**
 sign-in mapping the `lab-admins` group to `proxy_admin`.
@@ -108,7 +108,7 @@ sign-in mapping the `lab-admins` group to `proxy_admin`.
 
 | Scenario | Where it's denied | Visible evidence |
 |---|---|---|
-| `lab-users` hits `gateway.lab` | Cloudflare Access (not in `lab-admins`) | Access block page naming the policy |
+| `lab-users` hits `gateway` | Cloudflare Access (not in `lab-admins`) | Access block page naming the policy |
 | `lab-admins` from non-US IP | Cloudflare Access (geo Require) | Block page; Access log `geo` fail |
 | `lab-admins` without WARP | Cloudflare Access (posture Require) | Block page; posture not satisfied |
 | Forged `Cf-Access-...-Email` to Open WebUI | Can't reach the port (127.0.0.1 bind, ADR-007 / T-CHAT-S) | nothing reaches origin |

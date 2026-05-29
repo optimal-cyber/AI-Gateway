@@ -10,8 +10,8 @@
 # Inputs (env, all optional — checks that need a missing one are SKIPPED):
 #   OKTA_TENANT_URL          e.g. https://dev-12345678.okta.com
 #   CF_TEAM                  Cloudflare Zero Trust team name, e.g. optimallabs
-#   CHAT_HOST                default chat.lab.ironechelon.com
-#   GATEWAY_HOST             default gateway.lab.ironechelon.com
+#   CHAT_HOST                default chat.ironechelon.com
+#   GATEWAY_HOST             default gateway.ironechelon.com
 #   OKTA_LITELLM_CLIENT_ID   to assert the gateway OIDC redirect carries it
 #
 # Usage:
@@ -19,8 +19,8 @@
 # =============================================================================
 set -uo pipefail
 
-CHAT_HOST="${CHAT_HOST:-chat.lab.ironechelon.com}"
-GATEWAY_HOST="${GATEWAY_HOST:-gateway.lab.ironechelon.com}"
+CHAT_HOST="${CHAT_HOST:-chat.ironechelon.com}"
+GATEWAY_HOST="${GATEWAY_HOST:-gateway.ironechelon.com}"
 OKTA_TENANT_URL="${OKTA_TENANT_URL:-}"
 CF_TEAM="${CF_TEAM:-}"
 OKTA_LITELLM_CLIENT_ID="${OKTA_LITELLM_CLIENT_ID:-}"

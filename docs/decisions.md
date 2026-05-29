@@ -374,7 +374,12 @@ of NAT Gateway — ~$4/mo but operator-managed; rejected for the managed service
 
 ## ADR-010 — Use `ironechelon.com` for the lab subdomain; landing intentionally on Cloudflare DNS
 
-**Status:** Accepted (2026-05-28). Supersedes ADR-008.
+**Status:** Accepted (2026-05-28). Supersedes ADR-008. **Further refined by ADR-011**
+on the same day: the lab actually deployed at `chat.ironechelon.com` /
+`gateway.ironechelon.com` (apex-level) rather than `*.lab.ironechelon.com`
+because Cloudflare's free Universal SSL only covers one wildcard level. The
+`ironechelon.com`-as-host zone decision below is correct and stands; only the
+hostname level changed.
 
 **Context.** ADR-008 wanted the lab apps on `*.lab.gooptimal.io` with DNS still on
 Google so production records stayed isolated. When we hit Phase 4 (Cloudflare
@@ -431,3 +436,70 @@ enforcement on the request path.
 - `docs/google-dns-cnames.md` is now misleading-by-filename but useful as a record
   of the original plan — kept (rather than deleted) so the git history remains
   readable.
+
+---
+
+## ADR-011 — Drop the `lab.` namespace; deploy at apex-level subdomains
+
+**Status:** Accepted (2026-05-28). Refines ADR-010.
+
+**Context.** With ADR-010 the lab moved to `*.lab.ironechelon.com`. When we hit
+Phase 4 end-to-end testing, browsers got `SSLV3_ALERT_HANDSHAKE_FAILURE` against
+both `chat.lab.ironechelon.com` and `gateway.lab.ironechelon.com`. The Cloudflare
+edge is reachable, the tunnel is healthy with 4 connections, the cert chain just
+fails the TLS handshake.
+
+Diagnosis: **Cloudflare's free Universal SSL covers the apex domain and one
+wildcard level only** (i.e., `ironechelon.com` and `*.ironechelon.com`). Two-level
+deep subdomains like `chat.lab.ironechelon.com` need either:
+
+1. An **Advanced Certificate** (~$10/month per zone) explicitly listing
+   `*.lab.ironechelon.com` in the SAN, or
+2. **Cloudflare for SaaS / Custom Hostnames** (more complex configuration,
+   per-hostname certs).
+
+Verified by inspecting the cert Cloudflare presents at the apex (`SAN=ironechelon.com`)
+vs. empty/handshake-failure at the two-level hostnames.
+
+**Decision.** Drop the `lab.` level. Deploy the lab apps at **apex-level
+subdomains** that Universal SSL covers:
+
+| Original (ADR-010) | Actually deployed |
+|---|---|
+| `chat.lab.ironechelon.com` | `chat.ironechelon.com` |
+| `gateway.lab.ironechelon.com` | `gateway.ironechelon.com` |
+
+Tunnel UUIDs, Access policies (chat permissive 24h, gateway strict 4h with MFA
++ US geo), Okta IdP wiring, and the AWS infrastructure are all unchanged — only
+the published hostnames and DNS records change.
+
+**Alternatives.**
+- *Pay for Advanced Certificate* — kept the `lab.` prefix at ~$10/mo. Rejected
+  because the lab is budgeted at ~$80/mo and the prefix is aesthetic, not
+  functional. The cost line is real money over the life of a portfolio piece.
+- *Cloudflare for SaaS* — works for free with custom hostnames, but the config
+  is more involved and less typical for what the lab demonstrates. Rejected on
+  complexity grounds.
+- *Move to a 1-level-deep subdomain on a Cloudflare zone that allowed it* —
+  same effort as just dropping `.lab` here.
+
+**Consequences.**
+- **Visible URL change:** users (and the LinkedIn post) hit
+  `https://chat.ironechelon.com` and `https://gateway.ironechelon.com`. The
+  `lab.` prefix that signaled "sandbox" is gone — the architecture/policy
+  signaling lives in the Cloudflare Access setup and the apps themselves now.
+- **Okta** LiteLLM admin redirect URI updated to `https://gateway.ironechelon.com/sso/callback`.
+- **DNS in Cloudflare** for `ironechelon.com`: `chat.lab` / `gateway.lab` records
+  removed; `chat` and `gateway` records added, both **proxied (orange cloud)**.
+- **Cost:** **$0 incremental** (Universal SSL is free; no Advanced Cert needed).
+- **AWS infrastructure, Okta groups/policies, tunnel UUIDs, Access policies,
+  repo code** — all unchanged at the design level. A repo find/replace covered
+  the hostname references in docs, compose, scripts, and Terraform comments.
+- **Future labs** (`rag`, `mcp-write`, etc.) — same pattern: each gets its own
+  apex-level subdomain on `ironechelon.com` rather than a sub-subdomain.
+- **`gooptimal.io` still untouched** — same protection ADR-008 originally wanted.
+
+**Lessons captured for `docs/linkedin-talking-points.md`:** "Universal SSL only
+covers one wildcard level" is the kind of vendor detail that bites at deploy
+time. The fix took 5 minutes but the diagnosis took 30. Worth surfacing as a
+gotcha when describing the lab.
