@@ -129,5 +129,7 @@ variable "egress_allowlist_domains" {
     ".cloudflareaccess.com",
     ".argotunnel.com",
     ".cloudflare.com", # api.cloudflare.com, cloudflared update channel
+    # --- Okta (LiteLLM admin's OIDC token exchange goes through Squid) ---
+    ".okta.com",
   ]
 }
