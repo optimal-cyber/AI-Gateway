@@ -77,7 +77,11 @@ case "${AI_LAB_ROLE}" in
     put GENERIC_AUTHORIZATION_ENDPOINT "${OKTA_URL}/oauth2/v1/authorize"
     put GENERIC_TOKEN_ENDPOINT      "${OKTA_URL}/oauth2/v1/token"
     put GENERIC_USERINFO_ENDPOINT   "${OKTA_URL}/oauth2/v1/userinfo"
-    put GENERIC_INCLUDE_CLIENT_ID   "true"
+    # GENERIC_INCLUDE_CLIENT_ID=false: don't ALSO include the client_id/secret in the
+    # POST body — fastapi_sso always sends them via the HTTP Basic Authorization header.
+    # Setting it to true triggers both, which Okta rejects with RFC 6749
+    # "Cannot supply multiple client credentials" (invalid_request).
+    put GENERIC_INCLUDE_CLIENT_ID   "false"
     put GENERIC_SCOPE               "openid email profile groups"
     put GENERIC_USER_ROLE_JWT_FIELD "groups"
     ;;
