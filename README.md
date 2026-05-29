@@ -47,43 +47,223 @@ already have it, and it is **not** a compliance attestation.
 
 ## Architecture
 
+The lab runs in a single AWS region with a Cloudflare Zero Trust front door and
+provider egress forced through a dstdomain-allowlist Squid proxy. Three control
+bands map one-for-one to a Zscaler reference design — private access at the
+edge, AI guardrails at the gateway, secure egress at the perimeter.
+
 ```mermaid
-graph TD
-    U[User · browser, any network]
-    CA[Cloudflare Access<br/>identity-aware proxy]
-    OK[Okta<br/>OIDC · MFA · groups]
-    CT[Cloudflare Tunnel<br/>cloudflared · no public ingress]
+flowchart TB
+    subgraph CFZT[" ☁️ Cloudflare Zero Trust "]
+        direction TB
+        ACCESS[Access Apps<br/>chat / gateway]
+        OKTA[Okta IdP<br/>lab-users / lab-admins]
+        CHATCF[chat.optimallabs.io]
+        GWCF[gateway.optimallabs.io]
+    end
 
-    LAB["optimallabs.io<br/>Cloudflare Pages"]
-    CHAT["chat.optimallabs.io<br/>Open WebUI · 127.0.0.1<br/>trusted-header SSO"]
-    GW["gateway.optimallabs.io<br/>LiteLLM admin<br/>direct OIDC"]
+    subgraph AWS["☁️  AWS VPC (us-east-1, 10.50.0.0/16)"]
+        direction TB
+        subgraph PUB[" 🌐 Public Subnet "]
+            NAT[NAT Gateway]
+            IGW[Internet Gateway]
+        end
 
-    NEMO[NeMo Guardrails<br/>DaaS · fail-closed]
-    MCP[compliance-mcp<br/>read-only]
-    PROVS["OpenAI · Anthropic"]
-    SAM[SAM.gov v3]
-    LOCAL[NIST 800-53 · POA&Ms<br/>CMMC L2 status]
+        subgraph PROXY[" 🛡️  Proxy Subnet "]
+            SQUID["Squid forward proxy<br/>dstdomain allowlist<br/>default-deny"]
+        end
 
-    SQUID[Squid allowlist proxy<br/>default-deny]
-    NAT[NAT Gateway]
-    IGW[Internet]
+        subgraph APP[" 🔒 App Subnet — no direct 80/443 "]
+            CHATHOST["chat-host  t3.small<br/>cloudflared + Open WebUI"]
+            GWHOST["gateway-host  t3.medium<br/>cloudflared + LiteLLM + Postgres<br/>+ NeMo Guardrails + compliance-mcp"]
+        end
+    end
 
-    U --> CA
-    CA -.OIDC.-> OK
-    CA --> CT
-    CT --> LAB
-    CT --> CHAT
-    CT --> GW
-    CHAT --> GW
-    GW --> NEMO --> PROVS
-    GW --> MCP
-    MCP --> SAM
-    MCP --> LOCAL
-    GW -. egress .-> SQUID
-    MCP -. egress .-> SQUID
-    NEMO -. egress .-> SQUID
-    SQUID --> NAT --> IGW
+    subgraph LLM[" 🧠 LLM Providers "]
+        OPENAI[OpenAI API]
+        ANTHROPIC[Anthropic API]
+    end
+
+    USER([End User]) --> CHATCF
+    ADMIN([Admin]) --> GWCF
+    CHATCF --> ACCESS
+    GWCF --> ACCESS
+    ACCESS --> OKTA
+    ACCESS -. cloudflared tunnel .-> CHATHOST
+    ACCESS -. cloudflared tunnel .-> GWHOST
+    CHATHOST -- "intra-VPC 4000" --> GWHOST
+    GWHOST -- "HTTP_PROXY" --> SQUID
+    SQUID --> NAT
+    NAT --> IGW
+    IGW --> OPENAI
+    IGW --> ANTHROPIC
+
+    classDef cf fill:#1e3a8a,stroke:#60a5fa,color:#dbeafe,stroke-width:2px
+    classDef aws fill:#7c2d12,stroke:#fb923c,color:#fed7aa,stroke-width:2px
+    classDef egress fill:#134e4a,stroke:#2dd4bf,color:#ccfbf1,stroke-width:2px
+    classDef llm fill:#581c87,stroke:#c084fc,color:#f3e8ff,stroke-width:2px
+
+    class ACCESS,OKTA,CHATCF,GWCF cf
+    class CHATHOST,GWHOST,NAT,IGW aws
+    class SQUID egress
+    class OPENAI,ANTHROPIC llm
 ```
+
+### Life of a prompt
+
+End-to-end flow for a single user message — three security boundaries (Access,
+NeMo input rail, NeMo output rail) gate every chat:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as 👤 User
+    participant CF as ☁️ Cloudflare<br/>Access
+    participant OK as 🔐 Okta IdP
+    participant CD as 🚇 cloudflared
+    participant OW as 💬 Open WebUI
+    participant LL as 🎛️ LiteLLM
+    participant NG as 🛡️ NeMo<br/>Guardrails
+    participant SQ as 🌐 Squid<br/>allowlist
+    participant AP as 🧠 Anthropic
+
+    U->>CF: GET chat.optimallabs.io
+    CF->>OK: OIDC redirect
+    OK-->>CF: id_token (groups: lab-users)
+    CF-->>U: CF_AppSession + Cf-Access-* headers
+    U->>CD: HTTPS request w/ headers
+    CD->>OW: HTTP (trusted-header SSO)
+    OW->>LL: POST /v1/chat/completions (virtual key)
+    LL->>NG: pre_call /v1/guardrail/check
+    Note over NG: deterministic detectors<br/>regex + Luhn + entropy<br/>0.1 ms
+    NG-->>LL: blocked=false
+    LL->>SQ: CONNECT api.anthropic.com:443
+    SQ->>AP: forward (in allowlist ✓)
+    AP-->>SQ: completion
+    SQ-->>LL: completion
+    LL->>NG: post_call /v1/guardrail/check
+    NG-->>LL: blocked=false
+    LL-->>OW: token stream
+    OW-->>U: rendered response
+```
+
+NeMo runs in **sequential** (pre-call / post-call) mode — not parallel. Parallel
+inspection is lower latency but sensitive data may already be in flight to the
+provider by the time the rail decides to block. For a 3PAO walkthrough the
+sequential model is the only honest answer.
+
+### Why an AI Gateway — the control problem LiteLLM solves
+
+Without a gateway, every consumer of LLM access holds raw provider keys. Spend,
+allow-lists, guardrails, and revocation become a per-team / per-script problem:
+
+```mermaid
+flowchart TB
+    subgraph C[" Consumers "]
+        OW[Open WebUI]
+        IA[Internal apps]
+        DS[Dev scripts<br/>and jobs]
+    end
+    KEYS["Raw provider keys<br/>stored in each app or script"]
+    OW --> KEYS
+    IA --> KEYS
+    DS --> KEYS
+    OPENAI[OpenAI API]
+    ANTHROPIC[Anthropic API]
+    KEYS --> OPENAI
+    KEYS --> ANTHROPIC
+    MESS["Keys, spend, model access,<br/>and usage are spread out"]
+    OPENAI --> MESS
+    ANTHROPIC --> MESS
+
+    classDef cons fill:#1e3a8a,stroke:#60a5fa,color:#dbeafe,stroke-width:2px
+    classDef bad fill:#7f1d1d,stroke:#f87171,color:#fee2e2,stroke-width:2px
+    classDef llm fill:#581c87,stroke:#c084fc,color:#f3e8ff,stroke-width:2px
+
+    class OW,IA,DS cons
+    class KEYS,MESS bad
+    class OPENAI,ANTHROPIC llm
+```
+
+With LiteLLM as the central control point, provider credentials stay in one
+place. Apps and developers get scoped virtual keys with budgets, allow-lists,
+guardrails, and tool routing applied centrally:
+
+```mermaid
+flowchart TB
+    subgraph C[" Consumers "]
+        OW[Open WebUI]
+        IA[Internal apps]
+        DS[Dev scripts<br/>and jobs]
+    end
+    VK["LiteLLM virtual keys<br/>scoped by app, user,<br/>team, or use case"]
+    CTRL["LiteLLM central<br/>control point"]
+    POL["Policy controls<br/>model allow-lists, budgets,<br/>usage, guardrails, tools"]
+    PROV["Provider credentials<br/>held by LiteLLM"]
+    OPENAI[OpenAI API]
+    ANTHROPIC[Anthropic API]
+
+    OW --> VK
+    IA --> VK
+    DS --> VK
+    VK --> CTRL
+    CTRL --> POL
+    POL --> PROV
+    PROV --> OPENAI
+    PROV --> ANTHROPIC
+
+    classDef cons fill:#1e3a8a,stroke:#60a5fa,color:#dbeafe,stroke-width:2px
+    classDef good fill:#14532d,stroke:#4ade80,color:#dcfce7,stroke-width:2px
+    classDef llm fill:#581c87,stroke:#c084fc,color:#f3e8ff,stroke-width:2px
+
+    class OW,IA,DS cons
+    class VK,CTRL,POL,PROV good
+    class OPENAI,ANTHROPIC llm
+```
+
+### Compliance MCP request path
+
+The MCP server is read-only on purpose — bounds the blast radius of prompt
+injection to "read seeded lab data" instead of "modify production state":
+
+```mermaid
+flowchart TB
+    U([👤 User])
+    U -- "asks for control text<br/>or compliance posture" --> OW
+    subgraph VPC[" AWS VPC "]
+        OW[Open WebUI]
+        LL[LiteLLM]
+        MCP[compliance-mcp]
+        OW -- "tool request" --> LL
+        LL -- "Docker network" --> MCP
+        MCP -- "tool output" --> LL
+        LL -- "answer with context" --> OW
+    end
+    subgraph EXT[" External / Static Data "]
+        SAM[SAM.gov<br/>via Squid allowlist]
+        NIST[NIST 800-53<br/>Rev 5 subset]
+        POA[POA&M store]
+        CM[CMMC L2 dashboard]
+    end
+    MCP -- "read-only API call" --> SAM
+    MCP -- "lookup" --> NIST
+    MCP -- "query" --> POA
+    MCP -- "query" --> CM
+    OW --> U
+
+    classDef internal fill:#1e3a8a,stroke:#60a5fa,color:#dbeafe,stroke-width:2px
+    classDef tool fill:#713f12,stroke:#fbbf24,color:#fef3c7,stroke-width:2px
+    classDef ext fill:#14532d,stroke:#4ade80,color:#dcfce7,stroke-width:2px
+
+    class OW,LL internal
+    class MCP tool
+    class SAM,NIST,POA,CM ext
+```
+
+Five tools exposed: `sam_gov_lookup`, `nist_control_lookup`, `poam_list`,
+`poam_summary`, `cmmc_level2_self_assess_status`. Each tool call writes a
+structured JSON audit row with redacted arguments — same audit-shape philosophy
+as NeMo's `decisions.log`.
 
 **DNS:** the lab hostnames live in **Cloudflare DNS under `optimallabs.io`**.
 Cloudflare Access requires the application domain to be on a Cloudflare-managed
@@ -293,10 +473,14 @@ Cloudflare Pages + Cloudflare Zero Trust (single seat) + Okta Developer are all
 
 ## Start here
 
-- **The "why":** [`docs/decisions.md`](docs/decisions.md) — ADR-001..009.
+- **The "why":** [`docs/decisions.md`](docs/decisions.md) — ADR-001..013.
 - **The threat model:** [`docs/threat-model.md`](docs/threat-model.md) — STRIDE
   per component + AI-specific.
 - **Run the smoke tests:** [`docs/test-plan.md`](docs/test-plan.md).
+- **The blog post:** [`docs/blog-zero-trust-ai-lab.md`](docs/blog-zero-trust-ai-lab.md) —
+  end-to-end walkthrough framed as a commodity counterpart to Will Grana's
+  Zscaler reference design. Mirrors the post structure with all Mermaid sources
+  inline.
 - **LinkedIn:** [`docs/linkedin-talking-points.md`](docs/linkedin-talking-points.md).
 - **The original build spec:** [`prompts/CLAUDE_CODE_PROMPT.md`](prompts/CLAUDE_CODE_PROMPT.md).
 
