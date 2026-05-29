@@ -503,3 +503,69 @@ the published hostnames and DNS records change.
 covers one wildcard level" is the kind of vendor detail that bites at deploy
 time. The fix took 5 minutes but the diagnosis took 30. Worth surfacing as a
 gotcha when describing the lab.
+
+
+## ADR-012 — Per-host instance type: gateway-host on t3.medium, chat-host on t3.small
+
+**Date:** 2026-05-29
+**Status:** Accepted
+**Supersedes / amends:** none (refines the cost model in `docs/cost.md`)
+
+### Context
+
+The lab originally sized both app hosts (`chat-host`, `gateway-host`) as
+**t3.small** (2 vCPU, 2 GB RAM) to stay under the ~$80/mo ceiling that drove
+ADR-009. That sizing was fine in the first few deploys because NeMo Guardrails'
+LLM rails weren't actually initializing — the SDK was failing on a missing
+`dataclasses-json` transitive dep at startup, falling back to deterministic
+detectors only. The deterministic path was always the authoritative block per
+ADR-003, so the lab worked, but `nemo_enabled` was `false` and the
+`activated_rails` audit field was empty.
+
+After fixing the import (`dataclasses-json>=0.6` pinned in
+`docker/gateway-host/nemo/Dockerfile`), NeMo's `LLMRails(config)` now loads
+langchain + tokenizer footprint at boot — measured RSS spike of ~600–1000 MB on
+top of the existing LiteLLM (~400 MB), Postgres (~50 MB), compliance-mcp
+(~80 MB), and cloudflared (~30 MB). Two simultaneous container recreates
+(NeMo + LiteLLM during a deploy) pushed total resident over 2 GB; the kernel
+OOM-killed the largest tractable victim, which turned out to be the SSM agent.
+The instance kept running, cloudflared kept the tunnel up, but commands came
+back `Undeliverable`, and we had to stop+resize+start to recover.
+
+We considered two options:
+1. **Bump both hosts to t3.medium** (4 GB RAM). +$30.40/mo total. Total lab
+   ~$95/mo — over ceiling.
+2. **Bump only gateway-host to t3.medium**. +$15.20/mo. Total lab ~$80–85/mo —
+   at ceiling. chat-host runs Open WebUI + cloudflared only (~400 MB resident);
+   t3.small fits with margin.
+
+### Decision
+
+Per-role instance type via `instance_type_overrides` map on the compute module:
+
+```hcl
+variable "instance_type_overrides" {
+  type    = map(string)
+  default = { gateway = "t3.medium" }
+  # chat: inherits var.instance_type default (t3.small)
+}
+```
+
+The resource picks via `lookup(var.instance_type_overrides, each.key, var.instance_type)`.
+
+### Consequences
+
+- **Gateway-host: t3.medium (2 vCPU, 4 GB).** Headroom for NeMo SDK warmup +
+  one or two concurrent provider streams from LiteLLM without OOM thrash.
+- **Chat-host: t3.small (2 vCPU, 2 GB).** Unchanged. Open WebUI is the only
+  Python service of consequence here.
+- **Cost:** +$15.20/mo (one instance step up). Total lab cost stays at the
+  ~$80/mo ceiling target, with room for the t3.small line item to absorb the
+  delta.
+- **Recovery procedure:** for future OOM events, stop → modify instance type →
+  start is the cleanest recovery (it lets systemd re-spawn everything cleanly
+  via `ai-lab-secrets@<role>` and the docker compose restart policies). Avoid
+  in-place reboot when the host is already over-budget on memory.
+- **Detection capability uplift:** with NeMo SDK loaded, T-GR-* tests now
+  produce both deterministic findings AND populated `activated_rails` audit
+  records — the LinkedIn / 3PAO walkthrough story gets concretely better.

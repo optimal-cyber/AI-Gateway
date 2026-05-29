@@ -11,7 +11,24 @@ variable "ami_id" {
 }
 
 variable "instance_type" {
-  type = string
+  description = "Default instance type for app hosts. Per-role overrides go in instance_type_overrides."
+  type        = string
+}
+
+variable "instance_type_overrides" {
+  description = <<-EOT
+    Per-role instance type overrides keyed by host role (\"chat\"|\"gateway\"). The
+    gateway-host is sized larger because NeMo Guardrails' LLMRails warms up
+    langchain + tokenizer footprint at startup (~600-1000 MB resident on top of
+    LiteLLM + Postgres + compliance-mcp + cloudflared); t3.small (2 GB) OOM-kills
+    SSM agent during recreate cycles. chat-host runs Open WebUI + cloudflared
+    only, which fits t3.small comfortably. See ADR-012.
+  EOT
+  type        = map(string)
+  default = {
+    gateway = "t3.medium"
+    # chat: inherit default (t3.small)
+  }
 }
 
 variable "vpc_id" {

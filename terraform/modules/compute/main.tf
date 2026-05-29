@@ -131,7 +131,7 @@ resource "aws_instance" "app" {
   for_each = local.hosts
 
   ami                         = var.ami_id
-  instance_type               = var.instance_type
+  instance_type               = lookup(var.instance_type_overrides, each.key, var.instance_type)
   subnet_id                   = var.app_subnet_id
   vpc_security_group_ids      = [aws_security_group.app.id]
   iam_instance_profile        = aws_iam_instance_profile.app.name
