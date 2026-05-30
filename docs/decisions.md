@@ -613,11 +613,18 @@ the new public-hostname routes alongside the ironechelon ones, so the tunnel
 tokens in Secrets Manager (`lab/cloudflare_tunnel_token_chat`,
 `lab/cloudflare_tunnel_token_gateway`) needed no change.
 
-**Okta:** added `https://gateway.optimallabs.io/sso/key/generate` to the
-LiteLLM admin OIDC app's Sign-in redirect URIs alongside the existing
-ironechelon entry. The `[CF Access] Cloudflare Access` OIDC app (used for chat
-SSO) has no host-bound URI to change — Access handles the redirect at the
-Cloudflare layer.
+**Okta:** added `https://gateway.optimallabs.io/sso/callback` to the LiteLLM
+admin OIDC app's Sign-in redirect URIs alongside the existing ironechelon
+entry. (Note: the initial Phase 7 walkthrough mistakenly named
+`/sso/key/generate` as the new redirect URI; that path is the LiteLLM admin's
+create-virtual-key page, not an OIDC callback target. LiteLLM's actual OIDC
+callback is `PROXY_BASE_URL + /sso/callback`. The error surfaced as an Okta
+400 Bad Request — "redirect_uri parameter must be a Login redirect URI in the
+client app settings" — on the first attempt to sign into the optimallabs
+admin URL. Fix was to add the `/sso/callback` URI and delete the wrong
+`/sso/key/generate` entry.) The `[CF Access] Cloudflare Access` OIDC app (used
+for chat SSO) has no host-bound URI to change — Access handles the redirect at
+the Cloudflare layer.
 
 **Repo:** blind search-and-replace `ironechelon.com → optimallabs.io` and
 `ironechelon → optimallabs` across 14 files (compose, secrets-bootstrap,
