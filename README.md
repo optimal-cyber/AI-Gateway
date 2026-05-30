@@ -478,9 +478,9 @@ Cloudflare Pages + Cloudflare Zero Trust (single seat) + Okta Developer are all
   per component + AI-specific.
 - **Run the smoke tests:** [`docs/test-plan.md`](docs/test-plan.md).
 - **The blog post:** [`docs/blog-zero-trust-ai-lab.md`](docs/blog-zero-trust-ai-lab.md) —
-  end-to-end walkthrough framed as a commodity counterpart to Will Grana's
-  Zscaler reference design. Mirrors the post structure with all Mermaid sources
-  inline.
+  end-to-end walkthrough of the reference design with all Mermaid sources
+  inline and screenshot-capture instructions marked as `🔴 SCREENSHOT S-X`
+  callouts. Use this as the publish-ready draft.
 - **LinkedIn:** [`docs/linkedin-talking-points.md`](docs/linkedin-talking-points.md).
 - **The original build spec:** [`prompts/CLAUDE_CODE_PROMPT.md`](prompts/CLAUDE_CODE_PROMPT.md).
 
