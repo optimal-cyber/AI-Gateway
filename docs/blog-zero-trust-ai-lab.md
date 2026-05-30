@@ -365,7 +365,7 @@ The practical difference is **ownership**. Provider credentials stay in one plac
 
 The same data is in Postgres if I want it queryable:
 
-> 🔴 **SCREENSHOT S-7 — Postgres LiteLLM_SpendLogs**
+> Postgres LiteLLM_SpendLogs**
 > SSM into gateway-host and run:
 > ```bash
 > docker exec gateway-host-postgres-1 psql -U litellm -d litellm -P pager=off \
