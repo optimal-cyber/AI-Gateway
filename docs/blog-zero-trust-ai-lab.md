@@ -339,12 +339,19 @@ flowchart TB
 
 The practical difference is **ownership**. Provider credentials stay in one place. Apps and developers get virtual keys that can be scoped, budgeted, revoked, and tracked. No `OPENAI_API_KEY` exported into a developer's shell history.
 
-> 🔴 **SCREENSHOT S-6 — LiteLLM Admin Logs page**
-> Open `https://gateway.optimallabs.io` → sign in via Okta MFA → left nav → **Logs**.
-> Filter to **Last 24h** so the recent T-GR-* test rows are visible.
-> Screenshot the table showing **a mix of Success rows (with real $ cost) and Failure rows (with $0.00)** — the cost column makes the dollars-saved story without commentary.
+> 🟢 **SCREENSHOT S-6 — LiteLLM Admin Logs page** *(captured)*
+> File: `docs/images/blog/s6-litellm-logs.png`
+> Source: `gateway.optimallabs.io/ui/?page=logs` → time filter `Last 24 Hours`, Live Tail on, ~100 rows generated via `scripts/generate-demo-logs.sh -- --count 80 --with-mcp`.
 
-*LiteLLM admin gives me one place to observe model requests, MCP activity, cost, duration, and failures. The interesting column for me is Cost: every Failure row above is a blocked request that cost $0.000000 because the guardrail ran before the provider call. The Success rows are real Anthropic spend on legit chats.*
+![LiteLLM Admin Logs — 106 results showing Success and Failure rows with real $ cost, user attribution, and team / virtual-key context](images/blog/s6-litellm-logs.png)
+
+*LiteLLM admin gives me one place to observe model requests, cost, duration, user identity, and failures — and the same data is queryable in Postgres (next screenshot). Eight columns on this screen, all individually meaningful for an audit walk-through:*
+
+- ***Cost** — every red Failure row shows `-` (no spend) because the guardrail blocked the request before the provider call. Green Success rows show real Anthropic dollar amounts. The "dollars saved on blocked PII / secret / injection prompts" story tells itself in this one column.*
+- ***Internal User / End User** — both populated with `ryan@gooptimal.io` on every row. The chat app forwards the trusted-header identity downstream so LiteLLM attributes the call to the actual person, not the virtual key. A 3PAO can answer "who tried to leak the SSN at 9:13 PM?" without leaving this view.*
+- ***Team Name / Key Name** — `AI-Lab` team, `open-webui` virtual key. Scoped, revocable, budget-bound (Phase 6).*
+- ***Tokens** — `0 (0+0)` on every Failure row. Hard proof the LLM was never invoked on a blocked request. The rail caught it; no prompt tokens, no completion tokens, no provider hit.*
+- ***Type** — `LLM` on chat completions; MCP tool calls would show as `MCP` when routed through LiteLLM's native MCP server integration (this run used OpenAI tool-spec format, which lands here as `LLM` rows; using LiteLLM's `mcp_server` request shape would split them into dedicated `MCP` rows).*
 
 The same data is in Postgres if I want it queryable:
 
