@@ -54,16 +54,24 @@
 
   <section id="what">
     <h2>What this is</h2>
-    <p>This is a <strong>reference design, not a product</strong> — a credible,
-    affordable counterpart to a Zscaler-based Zero Trust AI reference architecture,
-    assembled from <strong>Cloudflare Zero Trust, AWS, Okta, and open-source
-    components</strong>. It demonstrates the controls a defense-industrial-base or
-    SBIR-stage team actually needs around an LLM gateway: identity-aware access with
-    MFA, no public ingress, inline AI guardrails, workload egress allowlisting, and
-    an MCP server that queries your <em>own</em> compliance evidence.</p>
-    <p>It was inspired by Will Grana's Zscaler reference lab; this version answers
-    the question "what does a Cloudflare-and-open-source counterpart look like, and
-    what does it cost?" — roughly <strong>$75–85/month</strong> at idle.</p>
+    <p>This is a <strong>reference design, not a product</strong> — a defensible
+    Zero Trust AI architecture, assembled from <strong>Cloudflare Zero Trust, AWS,
+    Okta, and open-source components</strong>. It demonstrates the controls a
+    defense-industrial-base or SBIR-stage team actually needs around an LLM gateway:
+    identity-aware access with MFA, no public ingress, inline AI guardrails,
+    workload egress allowlisting, and an MCP server that queries your <em>own</em>
+    compliance evidence.</p>
+    <p>It answers the question "what does a defensible Zero Trust AI architecture
+    look like at commodity prices?" — roughly <strong>$95/month</strong> at idle on
+    AWS. Full Terraform, 13 ADRs, structured audit evidence at every control point.</p>
+    <p style="margin-top:22px">
+      <a href="/blog/zero-trust-ai-lab/"
+         style="display:inline-block; background:var(--accent); color:#0d1117;
+                font-weight:600; padding:10px 18px; border-radius:6px;
+                text-decoration:none;">
+        Read the full writeup →
+      </a>
+    </p>
     <p class="muted">Built by Optimal, LLC (CAGE 14HQ0) on personal infrastructure
     and personal time. It holds no client data and is not itself a compliance
     attestation.</p>
@@ -174,8 +182,8 @@
     <p class="muted">This lab is a personal reference design, separate from any client
     or assessment work.</p>
     <p class="links">
-      <!-- TODO: set the LinkedIn URL -->
-      <a href="https://www.linkedin.com/" rel="me">LinkedIn</a>
+      <a href="/blog/zero-trust-ai-lab/">Read the writeup</a>
+      <a href="https://www.linkedin.com/in/ryangutwein/" rel="me">LinkedIn</a>
       <a href="https://github.com/optimal-cyber/AI-Lab">GitHub — source</a>
       <a href="https://outpost.gooptimal.io">Outpost newsletter</a>
     </p>
