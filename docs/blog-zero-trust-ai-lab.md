@@ -30,8 +30,7 @@ Chat app + AI gateway          →  Open WebUI + LiteLLM
 
 ## Architecture
 
-> 🔴 **SCREENSHOT S-1 — Architecture diagram**
-> Render the Mermaid below at [mermaid.live](https://mermaid.live) in **dark theme**, then screenshot. Replace this callout with the image.
+> S-1 — Architecture diagram**
 
 ```mermaid
 %%{init: {'theme':'dark', 'themeVariables': {'primaryColor':'#1f2937','primaryBorderColor':'#60a5fa','primaryTextColor':'#e5e7eb','fontFamily':'monospace'}}}%%
@@ -113,14 +112,8 @@ The apps:
 
 Both are private apps published through Cloudflare Access + Tunnel. **No public EC2 IPs, no inbound ports, no SSH** (ADR-006). All host access is via AWS SSM Session Manager; all user access is via Okta + Cloudflare Access.
 
-> 🔴 **SCREENSHOT S-2 — AWS EC2 instances list**
-> Run this and screenshot the output. **Blur the InstanceIds before posting.**
-> ```bash
-> aws ec2 describe-instances --profile ai-lab --region us-east-1 \
->   --filters "Name=tag:Project,Values=ai-lab" "Name=instance-state-name,Values=running" \
->   --query 'Reservations[].Instances[].[Tags[?Key==`Name`]|[0].Value,InstanceType,State.Name,PrivateIpAddress]' \
->   --output table
-> ```
+> AWS EC2 instances list**
+<img width="1125" height="295" alt="Screenshot 2026-05-29 at 10 04 30 PM" src="https://github.com/user-attachments/assets/755366e2-a58e-4ec8-bca8-f1ab0623bf41" />
 
 *Three instances, all private subnet, no public IPs. SSM-only access. Per-role sizing — `chat-host` on t3.small ($15/mo), `gateway-host` on t3.medium ($30/mo) because NeMo's LLMRails warmup needs 4 GB headroom (ADR-012), `proxy` on t3.micro.*
 
