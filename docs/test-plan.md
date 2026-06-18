@@ -156,6 +156,19 @@ Pass criteria: each org reaches **only** its approved tier, and spend/audit
 segregate cleanly by team. (Pre-flight the payloads with the script's default
 dry-run before `--apply`.)
 
+**T-GOV-1 (G4 / ADR-018).** Using the same two orgs, show the gov tenant is
+governed more strictly than the dev tenant:
+
+| Check | Pass criteria |
+|---|---|
+| Residency in the logs | Every LiteLLM row for Acme's key shows a `gov/*` model on a gov boundary; **no** row ever shows a commercial endpoint — the residency policy is visible in the decision log |
+| Mandatory rails | Acme's calls always traverse both NeMo rails (input + output); the output rail is present on every gov row |
+| Soft-budget alert | Acme's team carries `soft_budget` (80% of max) + a 30d reset; crossing it fires a spend alert (config-ready via `alerting`) |
+| Approval record | Acme's team `metadata` carries `tier=gov` + `approved_by=<name>`; Dev Co's carries no approver |
+
+Pass criteria: the gov tenant differs from the dev tenant in all four governed
+dimensions, and the residency difference is evident in the decision logs.
+
 ---
 
 ## Run order

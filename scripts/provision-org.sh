@@ -17,25 +17,28 @@
 set -uo pipefail
 
 GW_URL="${GATEWAY_URL:-http://127.0.0.1:4000}"
-ORG="" ; TIER="dev" ; BUDGET="100" ; APPLY=0
+ORG="" ; TIER="dev" ; BUDGET="" ; APPROVED_BY="" ; APPLY=0
 
 usage() {
   cat <<USAGE
-Usage: provision-org.sh --org "<name>" [--tier dev|gov] [--budget <usd>] [--apply]
-  --org      Organization name (required)
-  --tier     Approved compliance tier: dev (default) | gov
-  --budget   Team max budget in USD (default: 100)
-  --apply    Actually POST to the gateway (default: dry-run only)
+Usage: provision-org.sh --org "<name>" [--tier dev|gov] [--budget <usd>]
+                        [--approved-by "<name>"] [--apply]
+  --org          Organization name (required)
+  --tier         Approved compliance tier: dev (default) | gov
+  --budget       Team max budget, whole USD (default: dev 100, gov 250)
+  --approved-by  Approver name — REQUIRED for --tier gov (ADR-018 gate)
+  --apply        Actually POST to the gateway (default: dry-run only)
 Env: GATEWAY_URL (default http://127.0.0.1:4000), LITELLM_MASTER_KEY (for --apply)
 USAGE
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --org)    ORG="${2:-}"; shift 2 ;;
-    --tier)   TIER="${2:-}"; shift 2 ;;
-    --budget) BUDGET="${2:-}"; shift 2 ;;
-    --apply)  APPLY=1; shift ;;
+    --org)         ORG="${2:-}"; shift 2 ;;
+    --tier)        TIER="${2:-}"; shift 2 ;;
+    --budget)      BUDGET="${2:-}"; shift 2 ;;
+    --approved-by) APPROVED_BY="${2:-}"; shift 2 ;;
+    --apply)       APPLY=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown arg: $1" >&2; usage; exit 2 ;;
   esac
@@ -43,6 +46,17 @@ done
 
 [[ -z "${ORG}" ]] && { echo "error: --org is required" >&2; usage; exit 2; }
 case "${TIER}" in dev|gov) ;; *) echo "error: --tier must be dev|gov" >&2; exit 2 ;; esac
+
+# Per-tier budget default; whole-USD only (bash integer arithmetic for soft_budget).
+[[ -z "${BUDGET}" ]] && { [[ "${TIER}" == "gov" ]] && BUDGET=250 || BUDGET=100; }
+[[ "${BUDGET}" =~ ^[0-9]+$ ]] || { echo "error: --budget must be a whole number of USD" >&2; exit 2; }
+
+# ADR-018 approval gate: the sensitive (gov) tier requires a named approver.
+if [[ "${TIER}" == "gov" && -z "${APPROVED_BY}" ]]; then
+  echo "error: --tier gov requires --approved-by \"<name>\" (ADR-018 approval gate)" >&2
+  exit 2
+fi
+SOFT=$(( BUDGET * 80 / 100 ))   # soft_budget alert threshold = 80% of max
 
 # Tier model allow-lists — keep in sync with docker/gateway-host/litellm-config.yaml.
 if [[ "${TIER}" == "gov" ]]; then
@@ -54,10 +68,12 @@ fi
 # slug for aliases: lower, non-alnum -> '-'
 SLUG=$(printf '%s' "${ORG}" | tr '[:upper:] ' '[:lower:]-' | tr -cd 'a-z0-9-')
 
-TEAM_PAYLOAD=$(printf '{"team_alias":"%s","max_budget":%s,"models":%s}' "${ORG}" "${BUDGET}" "${MODELS}")
+TEAM_PAYLOAD=$(printf '{"team_alias":"%s","max_budget":%s,"soft_budget":%s,"budget_duration":"30d","models":%s,"metadata":{"tier":"%s","approved_by":"%s"}}' \
+  "${ORG}" "${BUDGET}" "${SOFT}" "${MODELS}" "${TIER}" "${APPROVED_BY:-n/a}")
 
-echo "== provision-org: ${ORG} (tier=${TIER}, budget=\$${BUDGET}) =="
-echo "gateway: ${GW_URL}"
+echo "== provision-org: ${ORG} (tier=${TIER}, budget=\$${BUDGET}, soft=\$${SOFT}/30d) =="
+echo "gateway:  ${GW_URL}"
+echo "approver: ${APPROVED_BY:-n/a (dev tier — no approval gate)}"
 echo
 echo "[1] POST /team/new"
 echo "    ${TEAM_PAYLOAD}"
@@ -103,6 +119,8 @@ echo "✓ provisioned ${ORG}"
 echo "  team_id:     ${team_id}"
 echo "  virtual key: ${vkey}"
 echo "  tier:        ${TIER}  (models: ${MODELS})"
+echo "  budget:      \$${BUDGET} hard / \$${SOFT} soft-alert per 30d"
+echo "  approved_by: ${APPROVED_BY:-n/a}"
 echo
 echo "Deliver the virtual key to the org over a secure channel — it is shown once."
 echo "Next: map the org's Okta group -> team_id and add it to Cloudflare Access"

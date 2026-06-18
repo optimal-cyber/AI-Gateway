@@ -168,6 +168,10 @@ model_list:
 # --- Guardrails: NeMo as a DaaS hook on input (pre) and output (post) --------
 # Both point at the same custom class (../nemo_guardrail.py, mounted + on
 # PYTHONPATH); it calls the NeMo DaaS service and FAILS CLOSED if unreachable.
+# Both rails are default_on + fail-closed for ALL tenants; for gov-tier tenants
+# they are MANDATORY and non-removable — disabling either is a policy violation
+# (ADR-018 / G4). The output (post_call) rail is the one that catches
+# model-generated leaks.
 guardrails:
   - guardrail_name: "nemo-input"
     litellm_params:
@@ -195,6 +199,13 @@ general_settings:
   # Cloudflare Access (lab-admins + MFA + WARP + US); the Okta LiteLLM app is
   # assigned to lab-admins ONLY, so non-admins cannot complete the OIDC login.
   ui_access_mode: "admin_only"
+  # --- per-tenant budget alerting (ADR-018 / G4) ---------------------------
+  # Spend/budget alerts — including the per-team soft_budget thresholds set by
+  # scripts/provision-org.sh — fire through this channel. CONFIG-READY: set
+  # SLACK_WEBHOOK_URL in the env to activate. Verify keys against your LiteLLM
+  # version.
+  alerting: ["slack"]
+  alerting_threshold: 300 # also alerts on requests slower than 300s
 
 litellm_settings:
   drop_params: true
