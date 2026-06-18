@@ -62,7 +62,10 @@ validity/budgets and becomes the **source of truth**:
 - the request is forwarded to LiteLLM under a single `GATEWAY_UPSTREAM_KEY`
   service credential (the caller's gateway key never reaches LiteLLM),
 - spend is metered per request against the key and its team (`src/pricing.py` —
-  **placeholder rates, verify before billing**).
+  **placeholder rates, verify before billing**). **Streamed** responses are
+  metered too: the façade injects `stream_options.include_usage`, reads the
+  terminal usage chunk, and strips that injected chunk back out if the caller
+  didn't request it (so the client sees an unmodified stream).
 
 Manage it with the **admin API** (Bearer `GATEWAY_MASTER_KEY`) or the branded UI
 at **`/admin/ui`**. Semantics mirror `scripts/provision-org.sh` (org == team,
@@ -111,10 +114,6 @@ Rollback is repointing the consumer back to `:4000`.
   audit row marks `guardrail_output: skipped_stream`. Non-streaming responses
   are fully output-screened. (LiteLLM has the same fundamental constraint; its
   sequential post_call rail only applies to buffered responses.)
-- **Spend metering on streamed responses** is skipped — usage isn't known until
-  the stream ends, so streamed calls are authorized + budget-checked pre-call but
-  not billed (audit marks `billed: skipped_stream`). Non-streaming is fully
-  metered. Same family of constraint as the output-guardrail gap.
 - **Pricing** (`src/pricing.py`) ships placeholder rates so budget enforcement is
   exercised — verify against real provider pricing before relying on spend.
 - **Store** is SQLite (single-instance). For multi-instance, swap the `Store`

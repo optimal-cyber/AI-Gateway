@@ -30,8 +30,13 @@ def _make_handler(captured):
             if "sk-bad" in auth:
                 return httpx.Response(401, json={"error": {"message": "invalid key"}})
             if body.get("stream"):
+                include_usage = bool((body.get("stream_options") or {}).get("include_usage"))
+
                 async def _sse():
                     yield b'data: {"choices":[{"delta":{"content":"pong"}}]}\n\n'
+                    if include_usage:  # terminal usage-only chunk, OpenAI-style
+                        yield (b'data: {"choices":[],"usage":{"prompt_tokens":1000,'
+                               b'"completion_tokens":1000,"total_tokens":2000}}\n\n')
                     yield b"data: [DONE]\n\n"
                 return httpx.Response(200, content=_sse(),
                                       headers={"content-type": "text/event-stream"})

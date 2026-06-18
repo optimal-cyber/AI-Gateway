@@ -87,19 +87,21 @@ Enterprise wall bit us. Shipped in `gateway/`, gated by `GATEWAY_CONTROL_PLANE`
   the store (active / not expired / model allow-list / budget remaining),
   forwards upstream under a single service credential (`GATEWAY_UPSTREAM_KEY`),
   and records spend per request against key + team (`src/pricing.py`,
-  placeholder rates clearly marked "verify before billing").
+  placeholder rates clearly marked "verify before billing"). Streamed responses
+  are metered via injected `stream_options.include_usage` (the injected usage
+  chunk is stripped back out if the caller didn't ask for it).
 - **Admin API** (`src/admin.py`) — master-key-protected CRUD for teams/keys +
   a spend summary. Semantics mirror `scripts/provision-org.sh` including the
   ADR-018 gov approval gate (a gov team requires `approved_by`).
 - **Branded admin UI** (`static/admin.html`) — minimal, dependency-free, served
   at `/admin/ui`; carries the Optimal Horizon mark.
 
-**Deferred from Phase 2 (honest gaps):** spend metering on *streamed* responses
-(usage isn't known until the stream ends — audit marks `billed: skipped_stream`);
-budget *alerting* (Slack) à la LiteLLM's `alerting:`; a polished/SPA admin UI;
-and a Postgres-backed store for multi-instance (the stack already runs Postgres
-— swap the `Store` class, the rest calls only its interface). `provision-org.sh`
-still targets LiteLLM's API; repointing it at `/admin/*` is a small follow-up.
+**Deferred from Phase 2 (honest gaps):** the **output guardrail** on *streamed*
+responses is still not enforced (tokens are already in flight); budget *alerting*
+(Slack) à la LiteLLM's `alerting:`; a polished/SPA admin UI; and a Postgres-backed
+store for multi-instance (the stack already runs Postgres — swap the `Store`
+class, the rest calls only its interface). `provision-org.sh` still targets
+LiteLLM's API; repointing it at `/admin/*` is a small follow-up.
 
 ### Phase 3 — deferred
 

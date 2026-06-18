@@ -72,6 +72,33 @@ def test_key_budget_exhausted_blocks(make_client):
     assert r.json()["detail"]["error"]["code"] == "budget_exceeded"
 
 
+def test_streaming_meters_spend_and_strips_injected_usage(make_client):
+    c, app = make_client(control_plane=True, master_key=M, upstream_key="sk-upstream")
+    t, k = _seed(app)
+    r = c.post("/v1/chat/completions",
+               headers={"Authorization": "Bearer " + k["key"]},
+               json={"model": "claude-opus-4-8", "messages": MSG, "stream": True})
+    assert r.status_code == 200
+    # client sees the content + DONE, but NOT the injected usage-only chunk
+    assert "pong" in r.text and "[DONE]" in r.text
+    assert "usage" not in r.text
+    # spend was metered from the captured usage (1000/1000 → $0.09)
+    assert round(app.state.store.get_team(t["id"])["spend"], 4) == 0.09
+    assert app.state.auditor.rows[-1]["billed"] == 0.09
+
+
+def test_streaming_caller_usage_passes_through_and_meters(make_client):
+    c, app = make_client(control_plane=True, master_key=M)
+    t, k = _seed(app)
+    r = c.post("/v1/chat/completions",
+               headers={"Authorization": "Bearer " + k["key"]},
+               json={"model": "claude-opus-4-8", "messages": MSG, "stream": True,
+                     "stream_options": {"include_usage": True}})
+    assert r.status_code == 200
+    assert "usage" in r.text          # caller asked for it → passed through
+    assert round(app.state.store.get_team(t["id"])["spend"], 4) == 0.09
+
+
 def test_control_plane_off_does_not_meter(make_client):
     # Phase-1 behavior preserved: no store enforcement, caller key forwarded.
     c, app = make_client(control_plane=False)

@@ -11,6 +11,7 @@ cut traffic over once smoke tests pass — see gateway/README.md.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 import time
@@ -177,19 +178,54 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
 
         # --- streaming passthrough ----------------------------------------
         if stream:
+            metering = authz is not None and store is not None
+            # To meter a stream we need usage, which OpenAI-compatible APIs only
+            # emit in a final chunk when stream_options.include_usage is set. If
+            # the caller didn't ask for it, inject it and STRIP that extra chunk
+            # back out so the client sees an unmodified stream.
+            caller_wants_usage = bool((body.get("stream_options") or {}).get("include_usage"))
+            strip_usage_chunk = False
+            if metering and not caller_wants_usage:
+                so = dict(body.get("stream_options") or {})
+                so["include_usage"] = True
+                body = {**body, "stream_options": so}
+                strip_usage_chunk = True
+
             resp = await up.stream(CHAT_PATH, body, headers)
 
             async def body_iter():
+                captured = {}
                 try:
+                    if not metering:  # fast path — raw passthrough (Phase 1)
+                        async for chunk in resp.aiter_raw():
+                            yield chunk
+                        return
+                    buf = b""
                     async for chunk in resp.aiter_raw():
-                        yield chunk
+                        buf += chunk
+                        while b"\n\n" in buf:
+                            event, buf = buf.split(b"\n\n", 1)
+                            emit, usage = _process_sse_event(event, strip_usage_chunk)
+                            if usage is not None:
+                                captured["usage"] = usage
+                            if emit is not None:
+                                yield emit + b"\n\n"
+                    if buf:
+                        yield buf
                 finally:
                     await resp.aclose()
+                    pt, ct = control_mod.usage_tokens(captured)
+                    cost = None
+                    if metering and captured.get("usage"):
+                        cost = control_mod.record(store, request_id=rid, authz=authz,
+                                                  model=model, prompt_tokens=pt,
+                                                  completion_tokens=ct)
+                    billed = (cost if cost is not None else "no_usage") if metering else None
                     audit.emit(**_row(status=resp.status_code, phase="stream",
-                                      # output rail AND spend metering on token
-                                      # streams are known gaps — see gateway/README.md.
+                                      # output rail on token streams remains a gap.
                                       guardrail_output="skipped_stream",
-                                      billed=("skipped_stream" if authz else None)))
+                                      prompt_tokens=pt or None,
+                                      completion_tokens=ct or None, billed=billed))
 
             return StreamingResponse(
                 body_iter(), status_code=resp.status_code,
@@ -235,6 +271,34 @@ def _upstream_headers(headers: dict, cfg: Settings) -> dict:
         headers = dict(headers)
         headers["authorization"] = f"Bearer {cfg.upstream_key}"
     return headers
+
+
+def _process_sse_event(event: bytes, strip_usage_chunk: bool):
+    """Inspect one SSE event for a usage payload (for spend metering).
+
+    Returns (emit_bytes | None, usage_dict | None). Original bytes are re-emitted
+    verbatim — we never reserialize the client's stream. When we injected
+    include_usage (strip_usage_chunk), the usage-only terminal chunk is dropped so
+    the caller sees an unmodified stream.
+    """
+    payload = None
+    for line in event.decode("utf-8", "replace").split("\n"):
+        if line.startswith("data:"):
+            payload = line[5:].strip()
+            break
+    if not payload or payload == "[DONE]":
+        return event, None
+    try:
+        obj = json.loads(payload)
+    except Exception:  # noqa: BLE001
+        return event, None
+    usage = obj.get("usage") if isinstance(obj, dict) else None
+    if not isinstance(usage, dict):
+        return event, None
+    # A usage-bearing chunk: drop it only if it's usage-ONLY and we injected it.
+    if strip_usage_chunk and not (obj.get("choices") or []):
+        return None, usage
+    return event, usage
 
 
 def _safe_json(resp):
