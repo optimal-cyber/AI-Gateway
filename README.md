@@ -572,8 +572,12 @@ Cloudflare Pages + Cloudflare Zero Trust (single seat) + Okta Developer are all
 
 The strategic arc — turning this into a **government-ready, multi-cloud,
 multi-tenant access layer** for approved organizations — is laid out in
-[`docs/roadmap.md`](docs/roadmap.md) (Phases G1–G5). The near-term items below
-feed into it.
+[`docs/roadmap.md`](docs/roadmap.md) (Phases G1–G5). **G1–G3 have landed
+(config-ready):** posture tiers ([ADR-014](docs/decisions.md)), a multi-cloud gov
+broker ([ADR-015](docs/decisions.md)), and approved-org tenancy
+([ADR-016](docs/decisions.md)/[017](docs/decisions.md)) — onboard a tenant with
+[`docs/org-onboarding.md`](docs/org-onboarding.md) + `scripts/provision-org.sh`.
+The near-term items below feed into the remaining phases.
 
 - **More government resources behind the gateway.** Add `.gov` sources as
   additional read-only `compliance-mcp` tools so the same authenticated key
@@ -614,6 +618,7 @@ feed into it.
 | 4.5 | Landing page at `optimallabs.io` | ✅ static, ~10kb |
 | 5 | Test plan + smoke-test script | ✅ documented |
 | 6 | Full README + LinkedIn talking points | ✅ this file |
+| G1–G3 | Gov-ready arc: posture tiers, multi-cloud broker, approved-org tenancy | ✅ ADRs 014–017; config-ready (gov boundaries not live; state not migrated) |
 
 ## Start here
 

@@ -137,6 +137,27 @@ post** — see `docs/linkedin-talking-points.md` for the framing.
 
 ---
 
+## 6. Tenancy — approved organizations (G3 / ADR-016)
+
+Requires a live gateway + master key. Provision two orgs at different tiers with
+`scripts/provision-org.sh`, then prove isolation + tier gating.
+
+**T-TEN-1.** Provision `--org "Dev Co" --tier dev` and `--org "Acme Defense"
+--tier gov` (`--apply`). Then, using each org's virtual key:
+
+| Check | Pass criteria |
+|---|---|
+| Tier gating (gov) | Acme's key → `gov/claude-opus-4-8` is **accepted**; Acme's key → `gpt-4o` (a `dev` model) is **rejected** (not in the team allow-list) — a gov tenant never reaches a commercial endpoint |
+| Tier gating (dev) | Dev Co's key → `gpt-4o` accepted; Dev Co's key → `gov/*` rejected |
+| Budget isolation | Each team shows only its own `max_budget` / spend in the Admin UI; neither sees the other's |
+| Audit segregation | LiteLLM request rows + compliance-MCP `caller_virtual_key_hash` attribute each call to the correct org/team |
+
+Pass criteria: each org reaches **only** its approved tier, and spend/audit
+segregate cleanly by team. (Pre-flight the payloads with the script's default
+dry-run before `--apply`.)
+
+---
+
 ## Run order
 
 ```
@@ -146,5 +167,6 @@ post** — see `docs/linkedin-talking-points.md` for the framing.
 3. Walk the guardrails matrix (T-GR-1..3)
 4. Walk the MCP matrix (T-MCP-1..4)
 5. Capture the audit trail (T-AUDIT-1)
-6. File everything under evidence/<TEST-ID>/
+6. Tenancy: provision two orgs + verify isolation (T-TEN-1)   [needs master key]
+7. File everything under evidence/<TEST-ID>/
 ```

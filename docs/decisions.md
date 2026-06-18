@@ -808,3 +808,104 @@ agent features don't.
   The gateway's MCP government-services are unaffected.
 - Sets up G3: per-org allow-lists can now select a tier *and* constrain which
   clouds/regions an org may use.
+
+---
+
+## ADR-016 — Approved-organization tenancy: one org = one LiteLLM team
+
+**Date:** 2026-06-18
+**Status:** Accepted
+**Implements:** [`docs/roadmap.md`](roadmap.md) Phase G3. **Builds on:** ADR-014/015.
+
+### Context
+
+The lab has been single-operator (one team `AI-Lab`, one key `open-webui`). The
+north star is an access layer for *approved organizations*. Each org needs its own
+scoped credentials, budget, and a model allow-list deciding which posture tiers
+(ADR-014) it may reach — with isolation between orgs in spend and audit.
+
+LiteLLM already models this primitive: a **team** owns virtual keys, a
+`max_budget`, rate limits, and a `models` allow-list. So the tenancy unit is a
+LiteLLM team; "approved organization" = a provisioned team plus the identity
+mapping that lets its users authenticate to it.
+
+### Decision
+
+1. **Org = LiteLLM team.** Each approved org is one team with its own virtual
+   key(s), a `max_budget` (+ tpm/rpm limits), and a **model allow-list scoped by
+   approved tier**:
+   - a `dev`-approved org gets the `dev` models only;
+   - a `gov`-approved org gets the `gov/*` models only — **not** the commercial
+     `dev` endpoints, so a gov tenant's prompts never leave a gov boundary;
+   - (an org explicitly approved for both can be granted both lists.)
+
+2. **Identity → tenant.** Users reach their org via Okta group → team mapping: an
+   Okta group per org, mapped to the org's LiteLLM team, gated at Cloudflare
+   Access the same way the lab's groups are (ADR-007). **Upgrade path (documented,
+   not built):** B2B federation — an org brings its own IdP via Okta org-to-org /
+   OIDC federation — for orgs that won't live in the lab's tenant.
+
+3. **Provisioning is a runbook + script, not click-ops.** Onboarding an approved
+   org is [`docs/org-onboarding.md`](org-onboarding.md) +
+   `scripts/provision-org.sh` (LiteLLM admin API: `/team/new` → `/key/generate`),
+   so a new tenant is a repeatable, reviewable action. The script is **dry-run by
+   default**; `--apply` performs the mutation against a live gateway.
+
+4. **Tenant isolation in audit.** Every LiteLLM request row carries the key +
+   end-user; the team/org dimension makes spend and logs segregable per tenant.
+   The compliance-MCP `caller_virtual_key_hash` line is per-key, so tool calls
+   attribute to the org too.
+
+### Consequences
+
+- Multi-tenancy is provisioning + identity mapping over primitives LiteLLM already
+  has — **no gateway code change**. The lab ships the runbook + script; the
+  existing operator stays one team among (eventually) many.
+- Tier-scoped allow-lists turn ADR-014's posture tags into an access-control
+  input: a gov tenant is *constrained* to gov boundaries (the compliance-correct
+  default), not merely *offered* them.
+- Real multi-tenant state must be durable and shared — see ADR-017 (remote TF
+  state), a hard prerequisite before provisioning real orgs.
+- **Acceptance (G3 done-when):** two distinct orgs reach the gateway with isolated
+  keys/budgets, each reaching only its allowed tiers, audit segregating by org
+  (test-plan T-TEN-1; requires a live gateway + master key).
+
+---
+
+## ADR-017 — Remote Terraform state (S3 + DynamoDB); supersedes ADR-001
+
+**Date:** 2026-06-18
+**Status:** Accepted
+**Supersedes:** ADR-001 (local state was acceptable only while the lab held no
+real data and ran single-operator).
+**Implements:** [`docs/roadmap.md`](roadmap.md) Phase G3 prerequisite.
+
+### Context
+
+ADR-001 chose local Terraform state because the lab held no real data and ran
+single-operator — and named this as "the first thing to revisit if that ever
+changes." G3 introduces approved organizations: multiple tenants, eventually more
+than one operator provisioning them. Local state cannot support that — no locking
+(concurrent applies corrupt state), no shared source of truth, no durable history.
+
+### Decision
+
+Adopt **remote state on S3 with DynamoDB state locking** before any real org is
+provisioned:
+- S3 bucket (versioned, SSE, public-access-blocked) for state.
+- DynamoDB table (`LockID` hash key) for state locks.
+- Backend config kept in `terraform/backend.tf.example` (a `.example` so the
+  current local-state workflow still `init`s until you migrate).
+
+**Bootstrap (chicken-and-egg):** the bucket + table are created once out-of-band
+(throwaway local-state config or by hand), then the main config migrates with
+`terraform init -migrate-state`. The commands are in the backend example.
+
+### Consequences
+
+- **Not yet migrated** — the lab is still single-operator with no real org data,
+  so the backend is config-ready (`.example`) and local state keeps working today.
+  Migration is the gate that opens before the first real tenant.
+- State locking makes concurrent org-provisioning safe; versioning gives rollback;
+  SSE + public-access-block protects state (which can carry sensitive outputs).
+- ADR-001 is superseded but left in place as history.
