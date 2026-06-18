@@ -81,3 +81,15 @@ class CmmcStatus(BaseModel):
     score_sprs_estimate: Optional[int] = None
     domains: List[CmmcDomain] = Field(default_factory=list)
     disclaimer: str = ""
+
+
+class FederalRegisterDocument(BaseModel):
+    document_number: Optional[str] = None
+    title: Optional[str] = None
+    type: Optional[str] = None          # Rule | Proposed Rule | Notice | Presidential Document
+    abstract: Optional[str] = None
+    publication_date: Optional[str] = None
+    agencies: List[str] = Field(default_factory=list)
+    html_url: Optional[str] = None
+    pdf_url: Optional[str] = None
+    source: str = "federalregister.gov api/v1"

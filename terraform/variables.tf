@@ -112,7 +112,8 @@ variable "egress_allowlist_domains" {
     ".openai.com",    # api.openai.com
     ".anthropic.com", # api.anthropic.com
     # --- government data (compliance MCP) ---
-    ".sam.gov", # api.sam.gov
+    ".sam.gov",             # api.sam.gov (sam_gov_lookup)
+    ".federalregister.gov", # www.federalregister.gov/api/v1 (federal_register_search; keyless)
     # --- container registries ---
     ".ghcr.io",               # GitHub Container Registry (Open WebUI, LiteLLM images)
     ".github.com",            # cloudflared + docker-compose plugin release downloads

@@ -10,7 +10,7 @@ The value is now clear. They're becoming enterprise services that sit in employe
 
 That changes the risk model. Prompt injection, RAG poisoning, tool misuse, data exposure, and unknown workload egress all need real controls. **And for teams in the SBIR / CMMC / FedRAMP orbit, those controls need to be defensible to a 3PAO walkthrough** — which matters here because I am one.
 
-The problem most reference architectures share is that they're written around enterprise-licensed Zero Trust stacks the average SBIR awardee or small DIB shop can't actually afford. I built this lab to show that the same control architecture is reachable with **commodity and open-source components** — Cloudflare Zero Trust + Okta + NeMo Guardrails (DaaS) + Squid forward proxy + a purpose-built compliance MCP — sitting in front of Open WebUI and LiteLLM as the AI app surface.
+The problem most reference architectures share is that they're written around enterprise-licensed Zero Trust stacks the average SBIR awardee or small DIB shop can't actually afford. I built this lab to show that the same control architecture is reachable with **commodity and open-source components** — Cloudflare Zero Trust + Okta + NeMo Guardrails (DaaS) + Squid forward proxy + a purpose-built compliance MCP — wrapped around **one authenticated AI API gateway** (LiteLLM). A user signs in once and gets a single scoped key that reaches every frontier model *and* their government / compliance resources. Open WebUI is one example client of that gateway, not the gateway itself.
 
 The control points are explicit. The substitutions are documented. The security posture is the same shape a 3PAO will expect to see at a higher-budget engagement.
 
@@ -22,8 +22,9 @@ The control band → component mapping:
 Private access at the edge     →  Cloudflare Access + Tunnel + Okta IdP
 Secure workload egress         →  Squid forward proxy + AWS SG (default-deny)
 Prompt + response inspection   →  NeMo Guardrails (DaaS, fail-closed)
-Read-only tool access (MCP)    →  compliance-mcp (SAM.gov, NIST, CMMC, POA&M)
-Chat app + AI gateway          →  Open WebUI + LiteLLM
+Government / compliance data   →  compliance-mcp (SAM.gov, NIST, CMMC, POA&M)
+AI API gateway (the door)      →  LiteLLM — every frontier model, one virtual key
+Example client app             →  Open WebUI
 ```
 
 ---
@@ -107,8 +108,8 @@ The hosts:
 
 The apps:
 
-- `chat.optimallabs.io` — Open WebUI
-- `gateway.optimallabs.io` — LiteLLM admin panel
+- `gateway.optimallabs.io` — the LiteLLM gateway: its OpenAI-compatible `/v1` endpoint and the SSO-gated Admin control plane. **This is the gateway.**
+- `chat.optimallabs.io` — Open WebUI, one example client app consuming the gateway
 
 Both are private apps published through Cloudflare Access + Tunnel. **No public EC2 IPs, no inbound ports, no SSH** (ADR-006). All host access is via AWS SSM Session Manager; all user access is via Okta + Cloudflare Access.
 
@@ -205,9 +206,9 @@ That's three-deep defense in depth on the admin path: by the time a request land
 
 ---
 
-## Open WebUI: Internal Chat App
+## Open WebUI: One Client of the Gateway
 
-[Open WebUI](https://github.com/open-webui/open-webui) is the user-facing chat layer.
+[Open WebUI](https://github.com/open-webui/open-webui) is the user-facing chat layer — **one example client app consuming the gateway, not the gateway itself.**
 
 In an enterprise this is the part employees would recognize: an internal AI assistant, support bot, engineering helper, or secure-ChatGPT-style app. It's also where a lot of risk enters the system. Users paste data, upload files, test prompts, and invoke tools from this layer. That makes the chat app a user-experience layer **and** a control boundary.
 
@@ -280,6 +281,31 @@ In this lab, LiteLLM handles:
 - Guardrail integration (NeMo, see next section)
 - MCP / tool routing (compliance MCP, see two sections down)
 - Per-request audit rows in Postgres, joinable to NeMo's decision log
+
+The gateway's face is its OpenAI-compatible endpoint, not a chat window. The only change from calling OpenAI directly is the `base_url`, and the same scoped virtual key reaches every frontier model **and** the government-resource (MCP) tools:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    api_key="sk-litellm-virtual-key",        # a scoped virtual key, not a provider key
+    base_url="http://gateway-host:4000/v1",  # ← the only line that changes
+)
+
+# One key, every frontier model:
+for model in ("gpt-4o", "claude-opus-4-8", "claude-sonnet-4-6",
+              "claude-haiku-4-5", "claude-fable-5"):
+    client.chat.completions.create(model=model, messages=[...])
+
+# Same key, same endpoint — a government resource, routed to compliance-mcp:
+client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user",
+               "content": "Look up Optimal, LLC by CAGE 14HQ0 using the compliance tools."}],
+)  # → a real SAM.gov entity, POC fields [REDACTED] unless the key is proxy_admin
+```
+
+An injection prompt on the same endpoint is blocked *pre-call* by NeMo — the provider is never reached, so the LiteLLM Logs row shows `0` tokens and `$0` spend. Authenticate once; reach every model and your compliance evidence the same way, governed the same way. `scripts/run-smoke-tests.sh` exercises all of this against a live gateway (`T-GW-1..4`).
 
 The "before" state — keys spread across consumers:
 
@@ -448,12 +474,13 @@ The decision log exports as JSON lines to stdout and to `/var/log/nemo/decisions
 
 A chatbot that only generates text has one risk profile. A chatbot that can query and interact with real systems has another — and for a compliance-adjacent team, the tools you want exposed are the ones that answer compliance questions, not the ones that change vendor configuration.
 
-This lab ships **`compliance-mcp`** — a read-only MCP server that wraps the data sources a CMMC L2 or SBIR team is constantly looking up by hand: SAM.gov entities, NIST 800-53 controls, POA&M state, and the CMMC L2 self-assessment dashboard.
+This lab ships **`compliance-mcp`** — a read-only MCP server that wraps the data sources a CMMC L2 or SBIR team is constantly looking up by hand: SAM.gov entities, the Federal Register, NIST 800-53 controls, POA&M state, and the CMMC L2 self-assessment dashboard.
 
-The compliance MCP exposes five read-only tools backed by deterministic data:
+The compliance MCP exposes six read-only tools — two make live `.gov` calls out through the Squid allowlist, the rest read seeded lab data:
 
 ```
-sam_gov_lookup(uei_or_cage)         — federal entity lookup, PII redacted unless admin
+sam_gov_lookup(uei_or_cage)         — SAM.gov federal entity lookup, PII redacted unless admin
+federal_register_search(term, ...)  — federalregister.gov rules/notices, newest-first (keyless)
 nist_control_lookup(control_id)     — NIST 800-53 Rev 5 control text + CMMC L2 mapping
 poam_list(status_filter)            — Plan of Action & Milestones, filterable by status
 poam_summary()                      — POA&M counts by severity / status

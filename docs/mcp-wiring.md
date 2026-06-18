@@ -36,6 +36,7 @@ in some clients). The MCP server mounts streamable HTTP at `/mcp` by default
 | Tool | Args | Source |
 |---|---|---|
 | `sam_gov_lookup` | `uei_or_cage`, `include_pii=false` | SAM.gov Entity API v3 (live) |
+| `federal_register_search` | `term`, `doc_type?`, `agency?`, `per_page=5` | federalregister.gov API v1 (live, keyless) |
 | `nist_control_lookup` | `control_id` | `data/nist_800_53_subset.json` (10 controls) |
 | `poam_list` | `status_filter?` (enum) | `data/poams.db` (read-only SQLite) |
 | `poam_summary` | — | `data/poams.db` |
@@ -58,9 +59,11 @@ contextvars:
 
 ## Resilience & logging
 
-- SAM.gov calls: `httpx` 10s timeout, `tenacity` exp-backoff retry on 429/5xx,
-  a circuit breaker that opens after 5 consecutive failures (then returns
-  "temporarily unavailable" instead of hammering the API).
+- Live `.gov` calls (`sam_gov_lookup`, `federal_register_search`): `httpx` 10s
+  timeout, `tenacity` exp-backoff retry on 429/5xx, a circuit breaker that opens
+  after 5 consecutive failures (then returns "temporarily unavailable" instead of
+  hammering the API). Both egress through the Squid allowlist (`.sam.gov`,
+  `.federalregister.gov`); `federal_register_search` needs no API key.
 - Every tool call emits one `structlog` JSON line to stdout (→ CloudWatch via the
   container log driver): `tool_name`, `status`, `caller_virtual_key_hash`,
   `caller_role`, `duration_ms`, `redacted_args`. Matched secret/PII values are
@@ -75,7 +78,7 @@ cd mcp-server
 python -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
 python -m pytest --cov=src --cov-report=term-missing -q
-# 47 passed, 88% coverage (data_store 97%, models 100%, sam_client 95%)
+# 63 passed, 87% coverage (data_store 97%, models 100%, sam_client 95%, fedreg_client 90%)
 ```
 
 End-to-end (Phase 5 test plan): from Open WebUI ask

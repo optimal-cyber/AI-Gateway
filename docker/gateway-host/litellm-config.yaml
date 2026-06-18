@@ -7,20 +7,36 @@
 # (ADR-009 Phase 2 dependency).
 # =============================================================================
 
+# All frontier models behind one endpoint + one virtual key. Add any model a
+# connected provider supports here; per-key allow-lists decide who can reach it.
+# Anthropic IDs verified against the claude-api reference (current frontier line:
+# Fable 5 most capable; Opus 4.8 default; Sonnet 4.6 balanced; Haiku 4.5 fast).
 model_list:
+  # --- OpenAI ---------------------------------------------------------------
   - model_name: gpt-4o
     litellm_params:
       model: openai/gpt-4o
       api_key: os.environ/OPENAI_API_KEY
 
-  - model_name: claude-opus-4-7
+  # --- Anthropic (current frontier lineup) ----------------------------------
+  - model_name: claude-fable-5            # most capable
     litellm_params:
-      model: anthropic/claude-opus-4-7
+      model: anthropic/claude-fable-5
       api_key: os.environ/ANTHROPIC_API_KEY
 
-  - model_name: claude-sonnet-4-6
+  - model_name: claude-opus-4-8           # default Opus tier
+    litellm_params:
+      model: anthropic/claude-opus-4-8
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: claude-sonnet-4-6         # speed / intelligence balance
     litellm_params:
       model: anthropic/claude-sonnet-4-6
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: claude-haiku-4-5          # fastest / cheapest
+    litellm_params:
+      model: anthropic/claude-haiku-4-5
       api_key: os.environ/ANTHROPIC_API_KEY
 
 # --- Guardrails: NeMo as a DaaS hook on input (pre) and output (post) --------
@@ -43,7 +59,7 @@ mcp_servers:
   compliance:
     url: "http://compliance-mcp:8000/mcp"
     transport: "http"
-    description: "Read-only compliance tools: SAM.gov, NIST 800-53, POA&Ms, CMMC L2"
+    description: "Read-only compliance tools: SAM.gov, Federal Register, NIST 800-53, POA&Ms, CMMC L2"
 
 # --- general settings --------------------------------------------------------
 general_settings:

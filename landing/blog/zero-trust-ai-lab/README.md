@@ -16,8 +16,8 @@ override it from the markdown. The standalone page gives LinkedIn a
 | Path | Purpose |
 |---|---|
 | `index.html` | The post itself — single self-contained HTML with inline CSS, Mermaid via CDN |
-| `og-hero.png` | **REQUIRED before publishing.** The 1200×627 social-preview image referenced by `og:image`. **Currently a placeholder — see "Hero image" below.** |
-| `images/s5-open-webui-signed-in.png` | Hero image inside the post |
+| `og-hero.png` | **REQUIRED before publishing.** The 1200×627 social-preview image referenced by `og:image`. **Show the gateway — the LiteLLM Admin control plane — not the chat window. Currently a placeholder; see "Hero image" below.** |
+| `images/s5-open-webui-signed-in.png` | In-post figure of Open WebUI — labeled as *one example client*, not the hero |
 | `images/s6-litellm-logs.png` | LiteLLM admin Logs screenshot |
 | `images/s8-blocked-secret.png` | Open WebUI blocked secret screenshot |
 | `images/s9-blocked-injection.png` | Open WebUI blocked prompt-injection screenshot |
@@ -27,14 +27,18 @@ override it from the markdown. The standalone page gives LinkedIn a
 LinkedIn's preferred dimensions for shared posts: **1200×627** (1.91:1 aspect).
 Save the social preview as `og-hero.png` directly in this folder.
 
-Sources to consider:
+**The hero is the gateway, not the chat window** — the `og:image:alt` describes
+the LiteLLM Admin control plane, so the image must match it. Sources, in order of
+preference:
 
-- **`chat.optimallabs.io`** (incognito, signed in as `ryan@gooptimal.io`, with
-  the `claude-opus-4-7` model picker visible at the top). Crop / pad to 1200×627
-  with a dark background if the raw screenshot isn't that ratio. Macos: open in
-  Preview → Tools → Adjust Size → make canvas 1200×627 with dark fill.
-- **Composite hero** — `chat.optimallabs.io` window on the left, architecture
+- **The LiteLLM Admin → Logs screen** (the gateway's control plane) — reuse
+  `docs/images/blog/litellmlogs.png`. Crop / pad to 1200×627 with a dark
+  background. Macos: open in Preview → Tools → Adjust Size → make canvas
+  1200×627 with dark fill. This is the screen that *is* the gateway.
+- **Composite hero** — the LiteLLM Admin Logs view on the left, the architecture
   diagram on the right.
+- *Do not* lead with a `chat.optimallabs.io` screenshot — Open WebUI is a client
+  of the gateway, not the gateway, and the headline should present the gateway.
 
 After replacing the file, force LinkedIn to re-crawl at
 <https://www.linkedin.com/post-inspector/> — paste

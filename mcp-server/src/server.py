@@ -1,8 +1,8 @@
 """Compliance MCP server (read-only — ADR-005).
 
-FastMCP over streamable HTTP (default) or stdio (MCP_TRANSPORT=stdio). Five tools:
-  sam_gov_lookup, nist_control_lookup, poam_list, poam_summary,
-  cmmc_level2_self_assess_status
+FastMCP over streamable HTTP (default) or stdio (MCP_TRANSPORT=stdio). Six tools:
+  sam_gov_lookup, federal_register_search, nist_control_lookup, poam_list,
+  poam_summary, cmmc_level2_self_assess_status
 
 All read-only. LiteLLM forwards an x-caller-role header (used for the admin-gated
 PII unmask) and x-mcp-auth (hashed for the audit log only). Structured JSON logs
@@ -25,6 +25,7 @@ from typing import Optional
 import structlog
 
 from . import data_store
+from .fedreg_client import FederalRegisterClient
 from .sam_client import CircuitOpenError, SAMClient, classify_identifier, redact_entity
 
 # --- structured logging ------------------------------------------------------
@@ -74,6 +75,17 @@ def _sam_client() -> SAMClient:
     return _sam
 
 
+# --- Federal Register client (lazy; keyless; settable for tests) -------------
+_fedreg: Optional[FederalRegisterClient] = None
+
+
+def _fedreg_client() -> FederalRegisterClient:
+    global _fedreg
+    if _fedreg is None:
+        _fedreg = FederalRegisterClient()
+    return _fedreg
+
+
 # --- tool logic (testable; no MCP runtime needed) ----------------------------
 async def _do_sam_gov_lookup(uei_or_cage: str, include_pii: bool = False) -> dict:
     t0 = time.time()
@@ -96,6 +108,28 @@ async def _do_sam_gov_lookup(uei_or_cage: str, include_pii: bool = False) -> dic
     except Exception as exc:  # noqa: BLE001
         _audit("sam_gov_lookup", "error", t0, error=type(exc).__name__)
         return {"found": False, "error": "lookup failed"}
+
+
+async def _do_federal_register_search(term: str, doc_type: Optional[str] = None,
+                                      agency: Optional[str] = None,
+                                      per_page: int = 5) -> dict:
+    t0 = time.time()
+    try:
+        docs = await _fedreg_client().search(term, doc_type=doc_type,
+                                             agency=agency, per_page=per_page)
+        _audit("federal_register_search", "ok", t0,
+               term=term, doc_type=doc_type, agency=agency, count=len(docs))
+        return {"count": len(docs),
+                "documents": [d.model_dump() for d in docs]}
+    except ValueError as exc:
+        _audit("federal_register_search", "invalid_input", t0, error=str(exc))
+        return {"count": 0, "error": str(exc)}
+    except CircuitOpenError as exc:
+        _audit("federal_register_search", "circuit_open", t0, error=str(exc))
+        return {"count": 0, "error": "Federal Register temporarily unavailable."}
+    except Exception as exc:  # noqa: BLE001
+        _audit("federal_register_search", "error", t0, error=type(exc).__name__)
+        return {"count": 0, "error": "search failed"}
 
 
 async def _do_nist_control_lookup(control_id: str) -> dict:
@@ -147,6 +181,17 @@ def build_mcp():
         """Look up a federal entity in SAM.gov by UEI (12 char) or CAGE (5 char).
         POC email/phone are redacted unless include_pii=true AND caller is admin."""
         return await _do_sam_gov_lookup(uei_or_cage, include_pii)
+
+    @mcp.tool()
+    async def federal_register_search(term: str, doc_type: Optional[str] = None,
+                                      agency: Optional[str] = None,
+                                      per_page: int = 5) -> dict:
+        """Search the Federal Register (federalregister.gov, public record) for
+        recent rules and notices. `term` is required free text; optional
+        `doc_type` is one of rule|proposed|notice|presidential; optional `agency`
+        is an agency slug (e.g. 'defense-department'); `per_page` is 1-20.
+        Read-only, keyless, newest-first."""
+        return await _do_federal_register_search(term, doc_type, agency, per_page)
 
     @mcp.tool()
     async def nist_control_lookup(control_id: str) -> dict:

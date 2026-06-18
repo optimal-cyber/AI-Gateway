@@ -24,7 +24,7 @@
 <meta property="og:image" content="https://optimallabs.io/blog/zero-trust-ai-lab/og-hero.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="627">
-<meta property="og:image:alt" content="chat.optimallabs.io — the user-facing surface of a Zero Trust AI lab">
+<meta property="og:image:alt" content="The LiteLLM Admin control plane — virtual keys, budgets, request logs, and guardrail blocks for a Zero Trust AI API gateway">
 <meta property="og:site_name" content="Optimal Labs">
 <meta property="article:author" content="Ryan Gutwein">
 <meta property="article:published_time" content="2026-05-30T00:00:00Z">
@@ -191,7 +191,7 @@
 
 <p>That changes the risk model. Prompt injection, RAG poisoning, tool misuse, data exposure, and unknown workload egress all need real controls. <strong>And for teams in the SBIR / CMMC / FedRAMP orbit, those controls need to be defensible to a 3PAO walkthrough</strong> — which matters here because I am one.</p>
 
-<p>The problem most reference architectures share is that they're written around enterprise-licensed Zero Trust stacks the average SBIR awardee or small DIB shop can't actually afford. I built this lab to show that the same control architecture is reachable with <strong>commodity and open-source components</strong> — Cloudflare Zero Trust + Okta + NeMo Guardrails (DaaS) + Squid forward proxy + a purpose-built compliance MCP — sitting in front of Open WebUI and LiteLLM as the AI app surface.</p>
+<p>The problem most reference architectures share is that they're written around enterprise-licensed Zero Trust stacks the average SBIR awardee or small DIB shop can't actually afford. I built this lab to show that the same control architecture is reachable with <strong>commodity and open-source components</strong> — Cloudflare Zero Trust + Okta + NeMo Guardrails (DaaS) + Squid forward proxy + a purpose-built compliance MCP — wrapped around <strong>one authenticated AI API gateway</strong> (LiteLLM). A user signs in once and gets a single scoped key that reaches every frontier model <em>and</em> their government / compliance resources. Open WebUI is one example client of that gateway, not the gateway itself.</p>
 
 <p>The control points are explicit. The substitutions are documented. The security posture is the same shape a 3PAO will expect to see at a higher-budget engagement.</p>
 
@@ -202,8 +202,9 @@
 <pre><code>Private access at the edge     →  Cloudflare Access + Tunnel + Okta IdP
 Secure workload egress         →  Squid forward proxy + AWS SG (default-deny)
 Prompt + response inspection   →  NeMo Guardrails (DaaS, fail-closed)
-Read-only tool access (MCP)    →  compliance-mcp (SAM.gov, NIST, CMMC, POA&amp;M)
-Chat app + AI gateway          →  Open WebUI + LiteLLM</code></pre>
+Government / compliance data   →  compliance-mcp (SAM.gov, NIST, CMMC, POA&amp;M)
+AI API gateway (the door)      →  LiteLLM — every frontier model, one virtual key
+Example client app             →  Open WebUI</code></pre>
 
 
 <h2>Architecture</h2>
@@ -269,15 +270,15 @@ flowchart TB
 
 <p>The apps:</p>
 <ul>
-<li><a href="https://chat.optimallabs.io"><code>chat.optimallabs.io</code></a> — Open WebUI</li>
-<li><a href="https://gateway.optimallabs.io"><code>gateway.optimallabs.io</code></a> — LiteLLM admin panel</li>
+<li><a href="https://gateway.optimallabs.io"><code>gateway.optimallabs.io</code></a> — the LiteLLM gateway: its OpenAI-compatible <code>/v1</code> endpoint and the SSO-gated Admin control plane. <strong>This is the gateway.</strong></li>
+<li><a href="https://chat.optimallabs.io"><code>chat.optimallabs.io</code></a> — Open WebUI, one example client app consuming the gateway</li>
 </ul>
 
 <p>Both are private apps published through Cloudflare Access + Tunnel. <strong>No public EC2 IPs, no inbound ports, no SSH</strong> (ADR-006). All host access is via AWS SSM Session Manager; all user access is via Okta + Cloudflare Access.</p>
 
 <figure>
   <img src="images/s5-open-webui-signed-in.png" alt="chat.optimallabs.io signed in as ryan@gooptimal.io with claude-opus-4-7 selected" loading="lazy">
-  <figcaption>Open WebUI on <code>chat.optimallabs.io</code>, signed in via Cloudflare Access trusted-header SSO. The user identity is populated upstream; the chat app never sees a password.</figcaption>
+  <figcaption>Open WebUI on <code>chat.optimallabs.io</code> — <strong>one example client app consuming the gateway</strong>, not the gateway itself. Signed in via Cloudflare Access trusted-header SSO; the user identity is populated upstream and the chat app never sees a password or a provider key (it holds only a LiteLLM virtual key).</figcaption>
 </figure>
 
 
@@ -358,6 +359,29 @@ sequenceDiagram
 
 <p>In this lab, LiteLLM handles virtual keys, provider connectivity, model allow-lists per team, budgets and rate limits, guardrail integration, MCP tool routing, and per-request audit rows in Postgres joinable to NeMo's decision log.</p>
 
+<p>The gateway's face is its OpenAI-compatible endpoint, not a chat window. The only change from calling OpenAI directly is the <code>base_url</code>, and the same scoped virtual key reaches every frontier model <em>and</em> the government-resource (MCP) tools:</p>
+
+<pre><code>from openai import OpenAI
+
+client = OpenAI(
+    api_key="sk-litellm-virtual-key",        # a scoped virtual key, not a provider key
+    base_url="http://gateway-host:4000/v1",  # ← the only line that changes
+)
+
+# One key, every frontier model:
+for model in ("gpt-4o", "claude-opus-4-8", "claude-sonnet-4-6",
+              "claude-haiku-4-5", "claude-fable-5"):
+    client.chat.completions.create(model=model, messages=[...])
+
+# Same key, same endpoint — a government resource, routed to compliance-mcp:
+client.chat.completions.create(
+    model="gpt-4o",
+    messages=[{"role": "user",
+               "content": "Look up Optimal, LLC by CAGE 14HQ0 using the compliance tools."}],
+)  # → a real SAM.gov entity, POC fields [REDACTED] unless the key is proxy_admin</code></pre>
+
+<p>An injection prompt on the same endpoint is blocked <em>pre-call</em> by NeMo — the provider is never reached, so the LiteLLM Logs row shows <code>0</code> tokens and <code>$0</code> spend. Authenticate once; reach every model and your compliance evidence the same way, governed the same way.</p>
+
 <figure>
   <img src="images/s6-litellm-logs.png" alt="LiteLLM Admin Logs view — 106 results with mix of Success and Failure rows, real cost on Success, $0 on Failure" loading="lazy">
   <figcaption>LiteLLM Admin → Logs. Every column tells part of the audit story — <strong>Cost</strong> is $- on every blocked row (guardrail caught it before the provider call); <strong>Internal User / End User</strong> are both populated with the actual identity, not just the virtual key's owner; <strong>Tokens</strong> are <code>0 (0+0)</code> on Failure rows — hard proof the LLM was never invoked.</figcaption>
@@ -413,10 +437,11 @@ sequenceDiagram
 
 <p>A chatbot that only generates text has one risk profile. A chatbot that can query and interact with real systems has another — and for a compliance-adjacent team, the tools you want exposed are the ones that answer compliance questions, not the ones that change vendor configuration.</p>
 
-<p>This lab ships <strong><code>compliance-mcp</code></strong> — a read-only MCP server that wraps the data sources a CMMC L2 or SBIR team is constantly looking up by hand: SAM.gov entities, NIST 800-53 controls, POA&amp;M state, and the CMMC L2 self-assessment dashboard.</p>
+<p>This lab ships <strong><code>compliance-mcp</code></strong> — a read-only MCP server that wraps the data sources a CMMC L2 or SBIR team is constantly looking up by hand: SAM.gov entities, the Federal Register, NIST 800-53 controls, POA&amp;M state, and the CMMC L2 self-assessment dashboard.</p>
 
-<p>Five tools registered:</p>
-<pre><code>sam_gov_lookup(uei_or_cage)         — federal entity lookup
+<p>Six tools registered — two make live <code>.gov</code> calls out through the Squid allowlist, the rest read seeded lab data:</p>
+<pre><code>sam_gov_lookup(uei_or_cage)         — SAM.gov federal entity lookup
+federal_register_search(term, ...)  — federalregister.gov rules/notices (keyless)
 nist_control_lookup(control_id)     — NIST 800-53 Rev 5 control text + CMMC L2 mapping
 poam_list(status_filter)            — Plan of Action &amp; Milestones, filterable
 poam_summary()                      — POA&amp;M counts by severity / status

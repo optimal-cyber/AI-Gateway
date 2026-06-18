@@ -56,11 +56,16 @@
     <h2>What this is</h2>
     <p>This is a <strong>reference design, not a product</strong> — a defensible
     Zero Trust AI architecture, assembled from <strong>Cloudflare Zero Trust, AWS,
-    Okta, and open-source components</strong>. It demonstrates the controls a
-    defense-industrial-base or SBIR-stage team actually needs around an LLM gateway:
-    identity-aware access with MFA, no public ingress, inline AI guardrails,
-    workload egress allowlisting, and an MCP server that queries your <em>own</em>
-    compliance evidence.</p>
+    Okta, and open-source components</strong>. At its center is <strong>one
+    authenticated AI API gateway</strong>: a user signs in once and gets a single
+    scoped key that reaches <strong>every frontier model</strong> (OpenAI +
+    Anthropic) <strong>and</strong> their <strong>government / compliance
+    resources</strong> — SAM.gov, NIST 800-53, CMMC, POA&amp;Ms — through one
+    OpenAI-compatible endpoint, governed centrally.</p>
+    <p>It demonstrates the controls a defense-industrial-base or SBIR-stage team
+    actually needs around that gateway: identity-aware access with MFA, no public
+    ingress, inline AI guardrails, workload egress allowlisting, and an MCP server
+    that queries your <em>own</em> compliance evidence.</p>
     <p>It answers the question "what does a defensible Zero Trust AI architecture
     look like at commodity prices?" — roughly <strong>$95/month</strong> at idle on
     AWS. Full Terraform, 13 ADRs, structured audit evidence at every control point.</p>
@@ -108,12 +113,12 @@
       <text class="s" x="540" y="158" text-anchor="middle">Cloudflare Tunnel (no public ingress)</text>
 
       <rect class="box" x="60" y="166" width="220" height="58" rx="8"/>
-      <text class="t" x="170" y="190" text-anchor="middle">chat.lab — Open WebUI</text>
-      <text class="s" x="170" y="208" text-anchor="middle">trusted-header SSO · 127.0.0.1</text>
+      <text class="t" x="170" y="190" text-anchor="middle">chat.lab — Open WebUI (client)</text>
+      <text class="s" x="170" y="208" text-anchor="middle">one example consumer · 127.0.0.1</text>
 
       <rect class="box" x="540" y="166" width="220" height="58" rx="8"/>
       <text class="t" x="650" y="190" text-anchor="middle">gateway.lab — LiteLLM admin</text>
-      <text class="s" x="650" y="208" text-anchor="middle">direct OIDC · admins + MFA + US</text>
+      <text class="s" x="650" y="208" text-anchor="middle">the gateway · admins + MFA + US</text>
 
       <path class="ln" d="M410,166 L180,166"/>
       <path class="ln" d="M410,166 L640,166"/>
@@ -138,6 +143,30 @@
       <text class="s" x="410" y="416" text-anchor="middle">All workloads run in private AWS subnets · SSM-only admin · no SSH</text>
     </svg>
     </figure>
+  </section>
+
+  <section id="gateway">
+    <h2>The gateway, concretely</h2>
+    <p>The gateway has two demonstrable surfaces — an API and a control plane.
+    Neither is a chat window.</p>
+    <ul>
+      <li><strong>An OpenAI-compatible endpoint.</strong> The only change from
+      calling OpenAI directly is the <code>base_url</code>. One scoped
+      <strong>virtual key</strong> reaches every frontier model
+      (<code>gpt-4o</code>, <code>claude-opus-4-8</code>,
+      <code>claude-sonnet-4-6</code>, <code>claude-haiku-4-5</code>,
+      <code>claude-fable-5</code>) <em>and</em> the government-resource tools
+      (a live <code>sam_gov_lookup</code>, NIST 800-53, CMMC, POA&amp;Ms). An
+      injection prompt is blocked pre-call by the NeMo guardrail — no provider
+      request, no spend.</li>
+      <li><strong>The LiteLLM Admin control plane</strong> (SSO-gated, at
+      <code>/ui</code>). This is the screen that <em>is</em> the gateway: virtual
+      keys, per-team budgets and live spend, request logs, guardrail blocks, and
+      model + tool routing.</li>
+    </ul>
+    <p class="muted"><strong>Open WebUI</strong> (<code>chat.optimallabs.io</code>)
+    is one labeled example of a client app consuming this gateway — not the
+    gateway, and not the product.</p>
   </section>
 
   <section id="stack">

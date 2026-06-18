@@ -42,7 +42,7 @@ def test_vkey_hash_stable():
 # ---- tool logic helpers ----------------------------------------------------
 import httpx  # noqa: E402
 
-from src import data_store, sam_client  # noqa: E402
+from src import data_store, fedreg_client, sam_client  # noqa: E402
 
 
 async def test_do_nist():
@@ -107,3 +107,29 @@ async def test_do_sam_lookup_invalid_id(monkeypatch, sam_payload):
     monkeypatch.setattr(server, "_sam", _sam_with(sam_payload))
     r = await server._do_sam_gov_lookup("nope")
     assert r["found"] is False and "error" in r
+
+
+def _fedreg_with(payload):
+    handler = lambda req: httpx.Response(200, json=payload)  # noqa: E731
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    return fedreg_client.FederalRegisterClient(client=client)
+
+
+async def test_do_fedreg_search_ok(monkeypatch, fedreg_payload):
+    monkeypatch.setattr(server, "_fedreg", _fedreg_with(fedreg_payload))
+    r = await server._do_federal_register_search("CMMC", doc_type="rule")
+    assert r["count"] == 2
+    assert r["documents"][0]["document_number"] == "2026-12345"
+    assert r["documents"][0]["agencies"] == ["Defense Department"]
+
+
+async def test_do_fedreg_search_empty_term(monkeypatch, fedreg_payload):
+    monkeypatch.setattr(server, "_fedreg", _fedreg_with(fedreg_payload))
+    r = await server._do_federal_register_search("   ")
+    assert r["count"] == 0 and "error" in r
+
+
+async def test_do_fedreg_search_bad_doc_type(monkeypatch, fedreg_payload):
+    monkeypatch.setattr(server, "_fedreg", _fedreg_with(fedreg_payload))
+    r = await server._do_federal_register_search("CMMC", doc_type="memo")
+    assert r["count"] == 0 and "error" in r
