@@ -321,10 +321,13 @@ any model any connected provider supports and every virtual key can reach it,
 subject to its per-key allow-list. Every entry carries a **compliance posture
 tag** ([ADR-014](docs/decisions.md)): the models above are the `dev` tier
 (commercial boundary), and a `gov` tier targets government-ready boundaries
-(Claude Platform on AWS for full parity; Amazon Bedrock in GovCloud as the
-working path). The `gov` entry is **config-ready but not live in this lab** — it
-goes live when GovCloud credentials and egress are provisioned (roadmap G1). In
-this lab the endpoint is published **privately** — in-VPC clients reach it at
+across **three clouds** — **AWS GovCloud** (Bedrock), **GCP Assured Workloads**
+(Vertex), and **Azure Government** (Azure OpenAI) — with `gov/claude-opus-4-8` a
+cross-cloud failover group ([ADR-015](docs/decisions.md)). Claude Platform on AWS
+is the full-parity Claude target. The `gov` entries are **config-ready but not
+live in this lab** — each goes live when that boundary's credentials and egress
+are provisioned (roadmap G1–G2). In this lab the endpoint is published
+**privately** — in-VPC clients reach it at
 `http://gateway-host:4000/v1`; an external CI client fronts it with a Cloudflare
 Access service token. It is never exposed to the public internet.
 

@@ -747,3 +747,64 @@ bare model name.
   (`/v1/models`); the live call SKIPs until gov credentials exist (T-GW-5).
 - Honesty guardrail unchanged: README/landing keep "government-ready
   architecture," never "this lab is authorized."
+
+---
+
+## ADR-015 — Multi-cloud government-ready boundaries + posture-aware routing/failover
+
+**Date:** 2026-06-18
+**Status:** Accepted
+**Implements:** [`docs/roadmap.md`](roadmap.md) Phase G2. **Builds on:** ADR-014.
+
+### Context
+
+ADR-014 established the gov/dev tier and tagged one gov boundary (AWS GovCloud via
+Bedrock). The north star is *multiple* clouds, so an approved org isn't locked to
+one provider's authorization, region, or availability. G2 wires additional
+government-ready boundaries under the same posture-tagging discipline and makes a
+single logical gov model resolve across them with failover.
+
+The provider-parity caveat from the claude-api reference matters here: Anthropic
+server-side tools and Managed Agents run only on Anthropic-direct and Claude
+Platform on AWS — *not* Bedrock / Vertex / Azure Foundry. The gateway's MCP /
+government-service tool-routing is LiteLLM-side, so the *services* (SAM.gov,
+Federal Register, NIST, CMMC) stay available cross-cloud even where provider-native
+agent features don't.
+
+### Decision
+
+1. **G2 government-ready boundaries** (each tagged per ADR-014):
+   - **AWS GovCloud (Bedrock)** — from G1.
+   - **GCP Vertex AI (Assured Workloads)** — `vertex_ai/claude-*`; FedRAMP boundary
+     via Assured Workloads, US residency.
+   - **Azure Government (Azure OpenAI)** — `azure/*` against the `*.openai.azure.us`
+     Government endpoint; FedRAMP High boundary.
+
+2. **Posture-aware routing/failover.** A logical gov model name with ≥2 same-named
+   `model_list` deployments forms a LiteLLM routing group; the proxy load-balances
+   and retries the next deployment on failure. `gov/claude-opus-4-8` now has two
+   deployments (AWS GovCloud + GCP Assured Workloads) → cross-cloud failover for
+   one logical model. `router_settings` sets the strategy + retry count.
+
+3. **Per-cloud egress, scoped.** Each boundary's endpoint is added to the Squid
+   allowlist scoped to the exact host family — `.aiplatform.googleapis.com`,
+   `.openai.azure.us` — never a broad `.googleapis.com` / `.azure.us`, to keep
+   default-deny intact.
+
+4. **Same honesty + liveness rule as G1.** All G2 gov entries are CONFIG-READY,
+   NOT LIVE — the lab holds no Vertex / Azure-Gov credentials. They register,
+   carry posture, and form the routing group; they go live when each boundary's
+   creds and egress are provisioned.
+
+### Consequences
+
+- The gov tier now spans **three clouds** (AWS GovCloud, GCP Assured Workloads,
+  Azure Government), and `gov/claude-opus-4-8` is a cross-cloud failover group.
+- **Acceptance (G2 done-when):** one logical gov model resolves across ≥2 clouds
+  with failover. Verifiable end-to-end only with provisioned gov creds; the host
+  smoke test verifies the gov catalog is *registered* (T-GW-5), not live failover.
+- Server-side-tool / Managed-Agents parity differs by boundary (full on
+  Anthropic-direct + Claude Platform on AWS; subset on Bedrock / Vertex / Azure).
+  The gateway's MCP government-services are unaffected.
+- Sets up G3: per-org allow-lists can now select a tier *and* constrain which
+  clouds/regions an org may use.

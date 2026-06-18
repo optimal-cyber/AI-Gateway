@@ -124,6 +124,47 @@ model_list:
       retention: none
       il: "IL4/IL5-eligible"
 
+  # Second deployment of the SAME logical model (gov/claude-opus-4-8) on a second
+  # cloud → cross-cloud failover group. LiteLLM load-balances / retries across
+  # same-named deployments (see router_settings below). ADR-015 / roadmap G2.
+  - model_name: gov/claude-opus-4-8
+    litellm_params:
+      # Verify the exact Vertex Claude model ID/version for your Assured Workloads
+      # project against the Vertex Model Garden before enabling.
+      model: vertex_ai/claude-opus-4-8
+      vertex_project: os.environ/VERTEX_GOV_PROJECT
+      vertex_location: us-central1
+      # Creds = a GCP service account (GOOGLE_APPLICATION_CREDENTIALS) to be
+      # provisioned; none in this lab.
+    model_info:
+      tier: gov
+      boundary: "GCP Vertex AI (Assured Workloads)"
+      cloud: gcp
+      region: us-central1
+      fedramp: high
+      residency: us
+      retention: none
+      il: "IL4-eligible"
+
+  # A second gov boundary for the OpenAI family — Azure Government. ADR-015 / G2.
+  - model_name: gov/gpt-4o
+    litellm_params:
+      # Azure OpenAI *deployment* name in an Azure Government resource. Verify the
+      # deployment name + api_version for your Azure Gov resource.
+      model: azure/gpt-4o-gov
+      api_base: os.environ/AZURE_GOV_OPENAI_ENDPOINT # https://<resource>.openai.azure.us/
+      api_key: os.environ/AZURE_GOV_OPENAI_API_KEY
+      api_version: "2024-10-21"
+    model_info:
+      tier: gov
+      boundary: "Azure Government (Azure OpenAI)"
+      cloud: azure
+      region: usgovvirginia
+      fedramp: high
+      residency: us
+      retention: none
+      il: "IL4/IL5-eligible"
+
 # --- Guardrails: NeMo as a DaaS hook on input (pre) and output (post) --------
 # Both point at the same custom class (../nemo_guardrail.py, mounted + on
 # PYTHONPATH); it calls the NeMo DaaS service and FAILS CLOSED if unreachable.
@@ -177,6 +218,15 @@ litellm_settings:
     max_budget: 0.0
     models: []
     user_role: "proxy_admin"
+
+# --- multi-cloud routing / failover (ADR-015 / roadmap G2) -------------------
+# Same-named model_list deployments form a routing group; the proxy load-balances
+# and retries the next deployment on failure. `gov/claude-opus-4-8` spans AWS
+# GovCloud + GCP Assured Workloads → cross-cloud failover for one logical model.
+# Verify keys against the LiteLLM version you deploy.
+router_settings:
+  routing_strategy: simple-shuffle
+  num_retries: 2
 
 # --- SSO / role mapping ------------------------------------------------------
 # Okta OIDC env (GENERIC_*) is set on the container in compose. Role mapping:

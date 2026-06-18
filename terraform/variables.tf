@@ -114,10 +114,13 @@ variable "egress_allowlist_domains" {
     # --- government data (compliance MCP) ---
     ".sam.gov",             # api.sam.gov (sam_gov_lookup)
     ".federalregister.gov", # www.federalregister.gov/api/v1 (federal_register_search; keyless)
-    # --- government-ready model boundaries (ADR-014; gov tier, config-ready) ---
-    # Scoped to the exact gov endpoint (not a broad .amazonaws.com) to preserve
-    # default-deny. Inert until the gov boundary's creds are provisioned.
-    "bedrock-runtime.us-gov-west-1.amazonaws.com", # Amazon Bedrock, AWS GovCloud
+    # --- government-ready model boundaries (ADR-014/015; gov tier, config-ready) ---
+    # Scoped to the exact gov endpoint/host-family (not a broad .amazonaws.com /
+    # .googleapis.com / .azure.us) to preserve default-deny. Inert until each gov
+    # boundary's creds are provisioned.
+    "bedrock-runtime.us-gov-west-1.amazonaws.com", # Amazon Bedrock, AWS GovCloud (G1)
+    ".aiplatform.googleapis.com",                  # GCP Vertex AI, Assured Workloads (G2)
+    ".openai.azure.us",                            # Azure Government, Azure OpenAI (G2)
     # Claude Platform on AWS (Anthropic-operated, SigV4) — add
     # aws-external-anthropic.<gov-region>.api.aws here once region/wiring is
     # confirmed (see litellm-config.yaml gov tier + ADR-014).
