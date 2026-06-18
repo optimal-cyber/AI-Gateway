@@ -48,7 +48,7 @@ attack surface we must maintain and attest to** — rewriting the commodity engi
 |---|---|---|
 | **0. Pin & vendor** | digest-pin the LiteLLM image, re-pin script, SBOM tooling, evidence record | ✅ shipped — [`docs/litellm-supply-chain.md`](litellm-supply-chain.md) |
 | **1. Gateway façade** | our OpenAI-compatible `/v1` front + auth gate + guardrail enforcement point + audit trail; proxies to LiteLLM | ✅ v0 shipped, 15 tests — [`gateway/`](../gateway), in compose on `:4001` |
-| **2. Control plane** | move the virtual-key/team/budget store + a branded admin UI into our stack so LiteLLM can be dropped | ⏳ planned (biggest chunk; admin UI is the bulk) |
+| **2. Control plane** | move the virtual-key/team/budget store + a branded admin UI into our stack so LiteLLM can be dropped | ✅ v0 shipped, 30 tests — store + admin API + budget metering + minimal UI |
 | **3. Provider engine** | replace LiteLLM's provider normalization | 💤 deferred, maybe indefinitely — only if a concrete need forces it |
 
 **Recommendation: do 0 → 1 → 2; do NOT do 3 until forced.** That delivers full
@@ -74,17 +74,32 @@ call with the key fingerprinted, never raw. It runs alongside LiteLLM on `:4001`
 cut over per [`gateway/README.md`](../gateway/README.md). Known gaps documented
 there (output rail on token streams; key store still upstream).
 
-### Phase 2 — planned
+### Phase 2 — shipped (v0)
 
 The control plane is where product value + branding concentrate and where the
-Enterprise wall bit us. Build:
-- a virtual-key + team + budget store (the façade becomes source of truth; the
-  `src/auth.py` seam is already isolated for this swap),
-- spend/budget enforcement + alerting,
-- a branded admin UI (the bulk of the effort — this is genuinely multi-week
-  frontend work, not a one-shot).
+Enterprise wall bit us. Shipped in `gateway/`, gated by `GATEWAY_CONTROL_PLANE`
+(default off — Phase-1 delegation stays the default until you cut over):
 
-Until then the façade delegates key validity/budgets to LiteLLM downstream.
+- **Store** (`src/store.py`) — SQLite, stdlib-only (mirrors `mcp-server`'s
+  sqlite use). Teams, keys, spend; keys stored as a SHA-256 hash, plaintext
+  returned once. The façade becomes the source of truth for keys + budgets.
+- **Authorize + meter** (`src/control.py`) — validates a presented key against
+  the store (active / not expired / model allow-list / budget remaining),
+  forwards upstream under a single service credential (`GATEWAY_UPSTREAM_KEY`),
+  and records spend per request against key + team (`src/pricing.py`,
+  placeholder rates clearly marked "verify before billing").
+- **Admin API** (`src/admin.py`) — master-key-protected CRUD for teams/keys +
+  a spend summary. Semantics mirror `scripts/provision-org.sh` including the
+  ADR-018 gov approval gate (a gov team requires `approved_by`).
+- **Branded admin UI** (`static/admin.html`) — minimal, dependency-free, served
+  at `/admin/ui`; carries the Optimal Horizon mark.
+
+**Deferred from Phase 2 (honest gaps):** spend metering on *streamed* responses
+(usage isn't known until the stream ends — audit marks `billed: skipped_stream`);
+budget *alerting* (Slack) à la LiteLLM's `alerting:`; a polished/SPA admin UI;
+and a Postgres-backed store for multi-instance (the stack already runs Postgres
+— swap the `Store` class, the rest calls only its interface). `provision-org.sh`
+still targets LiteLLM's API; repointing it at `/admin/*` is a small follow-up.
 
 ### Phase 3 — deferred
 

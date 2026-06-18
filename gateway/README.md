@@ -46,6 +46,41 @@ python -m src.app             # serve on :4001 (needs a reachable upstream)
 | `GATEWAY_GUARDRAIL_ENFORCE` | `false` | enforce rails at the façade |
 | `GATEWAY_REQUIRE_KEY` | `true` | reject requests with no bearer key |
 | `GATEWAY_AUDIT_LOG` | `/var/log/gateway/requests.log` | rotated JSON-line audit |
+| `GATEWAY_CONTROL_PLANE` | `false` | own keys/budgets locally (Phase 2) |
+| `GATEWAY_DB_PATH` | `/var/lib/gateway/control.db` | SQLite control-plane store |
+| `GATEWAY_MASTER_KEY` | _(unset)_ | admin API credential; admin closed if unset |
+| `GATEWAY_UPSTREAM_KEY` | _(unset)_ | service key used on the LiteLLM hop when control plane is on |
+| `GATEWAY_PRICING` | _(unset)_ | JSON per-model rate overrides for spend metering |
+
+## Control plane (Phase 2)
+
+When `GATEWAY_CONTROL_PLANE=true`, the façade stops delegating to LiteLLM for key
+validity/budgets and becomes the **source of truth**:
+
+- presented keys are validated against the local store (active? expired? model
+  allow-listed? budget remaining?),
+- the request is forwarded to LiteLLM under a single `GATEWAY_UPSTREAM_KEY`
+  service credential (the caller's gateway key never reaches LiteLLM),
+- spend is metered per request against the key and its team (`src/pricing.py` —
+  **placeholder rates, verify before billing**).
+
+Manage it with the **admin API** (Bearer `GATEWAY_MASTER_KEY`) or the branded UI
+at **`/admin/ui`**. Semantics mirror `scripts/provision-org.sh` (org == team,
+tier dev|gov, the ADR-018 gov approval gate):
+
+```bash
+ADMIN=(-H "Authorization: Bearer $GATEWAY_MASTER_KEY" -H 'Content-Type: application/json')
+# create a dev team with a $100 budget
+curl -sS "${ADMIN[@]}" -d '{"alias":"Acme","tier":"dev","max_budget":100}' \
+  http://gateway-host:4001/admin/teams
+# mint a key under it (the plaintext is returned ONCE)
+curl -sS "${ADMIN[@]}" -d '{"team_id":"team_…","alias":"acme-ci"}' \
+  http://gateway-host:4001/admin/keys
+curl -sS "${ADMIN[@]}" http://gateway-host:4001/admin/spend   # usage summary
+```
+
+Endpoints: `POST/GET /admin/teams`, `GET /admin/teams/{id}`, `POST/GET /admin/keys`,
+`GET /admin/keys/{id}`, `DELETE /admin/keys/{id}` (revoke), `GET /admin/spend`.
 
 ## Cutover (lab)
 
@@ -61,6 +96,11 @@ LiteLLM. To put it in the request path:
 4. **Move guardrails** onto the façade: set `GATEWAY_GUARDRAIL_ENFORCE=true` and
    delete the `guardrails:` block from `litellm-config.yaml`, so NeMo runs once,
    at the layer you own.
+5. **Move key management** onto the façade (Phase 2): set
+   `GATEWAY_CONTROL_PLANE=true`, a `GATEWAY_MASTER_KEY`, and a
+   `GATEWAY_UPSTREAM_KEY` (one LiteLLM service key the façade uses upstream).
+   Provision teams/keys via `/admin/ui` or the admin API and reissue keys to
+   tenants. LiteLLM then only does provider routing under the one service key.
 
 Rollback is repointing the consumer back to `:4000`.
 
@@ -71,6 +111,14 @@ Rollback is repointing the consumer back to `:4000`.
   audit row marks `guardrail_output: skipped_stream`. Non-streaming responses
   are fully output-screened. (LiteLLM has the same fundamental constraint; its
   sequential post_call rail only applies to buffered responses.)
-- **Key store / budgets** still live in LiteLLM (Phase 2 moves them).
-- The façade trusts the upstream's status codes and bodies; it does not yet
-  re-derive cost. Token counts in the audit row come from the upstream `usage`.
+- **Spend metering on streamed responses** is skipped — usage isn't known until
+  the stream ends, so streamed calls are authorized + budget-checked pre-call but
+  not billed (audit marks `billed: skipped_stream`). Non-streaming is fully
+  metered. Same family of constraint as the output-guardrail gap.
+- **Pricing** (`src/pricing.py`) ships placeholder rates so budget enforcement is
+  exercised — verify against real provider pricing before relying on spend.
+- **Store** is SQLite (single-instance). For multi-instance, swap the `Store`
+  class for a Postgres-backed one (the stack already runs Postgres); the rest of
+  the façade calls only its interface.
+- **Budget alerting** (Slack, like LiteLLM's `alerting:`) and a polished SPA
+  admin UI are deferred.

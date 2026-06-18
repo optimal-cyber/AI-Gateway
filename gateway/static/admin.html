@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Gateway — Control Plane</title>
+<style>
+  :root { --bg:#0b1020; --panel:#141b2e; --line:#27314d; --fg:#e7ecf6;
+          --muted:#9aa6c2; --accent:#5ea0ff; --bad:#f87171; --good:#4ade80; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg);
+         font:14px/1.5 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif; }
+  header { display:flex; align-items:center; gap:12px; padding:16px 24px;
+           border-bottom:1px solid var(--line); background:var(--panel); }
+  header img { height:28px; }
+  header h1 { font-size:16px; font-weight:600; margin:0; letter-spacing:.2px; }
+  header .sub { color:var(--muted); font-size:12px; }
+  main { max-width:1100px; margin:0 auto; padding:24px; display:grid; gap:20px; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px; }
+  .card h2 { font-size:13px; text-transform:uppercase; letter-spacing:.6px;
+             color:var(--muted); margin:0 0 12px; }
+  label { display:block; font-size:12px; color:var(--muted); margin:8px 0 3px; }
+  input, select { width:100%; padding:8px 10px; background:#0e1424; color:var(--fg);
+                  border:1px solid var(--line); border-radius:7px; }
+  button { margin-top:12px; padding:8px 14px; background:var(--accent); color:#06122b;
+           border:0; border-radius:7px; font-weight:600; cursor:pointer; }
+  button.ghost { background:transparent; color:var(--muted); border:1px solid var(--line); }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--line); }
+  th { color:var(--muted); font-weight:500; }
+  code { background:#0e1424; padding:2px 6px; border-radius:5px; word-break:break-all; }
+  .pill { font-size:11px; padding:1px 7px; border-radius:999px; border:1px solid var(--line); }
+  .pill.gov { color:#fbbf24; border-color:#7c5e16; }
+  .pill.dev { color:var(--accent); }
+  .ok { color:var(--good); } .err { color:var(--bad); }
+  #msg { min-height:18px; font-size:12px; }
+  .keybar { display:flex; gap:8px; align-items:end; }
+  .keybar > div { flex:1; }
+</style>
+</head>
+<body>
+<header>
+  <img src="https://optimallabs.io/optimal-horizon.svg" alt="AI Gateway"
+       onerror="this.style.display='none'">
+  <div>
+    <h1>AI Gateway — Control Plane</h1>
+    <div class="sub">Virtual keys, teams &amp; budgets — owned by the façade (Phase 2)</div>
+  </div>
+</header>
+
+<main>
+  <div class="card">
+    <h2>Admin authentication</h2>
+    <div class="keybar">
+      <div>
+        <label>Master key (Bearer)</label>
+        <input id="master" type="password" placeholder="GATEWAY_MASTER_KEY" autocomplete="off">
+      </div>
+      <button onclick="refresh()">Connect / refresh</button>
+    </div>
+    <div id="msg"></div>
+  </div>
+
+  <div class="row">
+    <div class="card">
+      <h2>New team (org)</h2>
+      <label>Alias</label><input id="t_alias" placeholder="Acme Robotics">
+      <label>Tier</label>
+      <select id="t_tier"><option value="dev">dev</option><option value="gov">gov</option></select>
+      <label>Max budget (USD)</label><input id="t_budget" type="number" placeholder="100">
+      <label>Approved by (required for gov — ADR-018)</label>
+      <input id="t_approved" placeholder="approver name">
+      <button onclick="createTeam()">Create team</button>
+    </div>
+
+    <div class="card">
+      <h2>New virtual key</h2>
+      <label>Team</label><select id="k_team"></select>
+      <label>Alias</label><input id="k_alias" placeholder="acme-ci">
+      <label>Max budget (USD, optional)</label><input id="k_budget" type="number">
+      <button onclick="createKey()">Generate key</button>
+      <div id="newkey"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Teams &amp; spend</h2>
+    <table id="teams"><thead><tr><th>Alias</th><th>Tier</th><th>Spend / budget</th>
+      <th>Approved by</th><th>ID</th></tr></thead><tbody></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2>Keys</h2>
+    <table id="keys"><thead><tr><th>Alias</th><th>Team</th><th>Spend / budget</th>
+      <th>Active</th><th>ID</th><th></th></tr></thead><tbody></tbody></table>
+  </div>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const master = () => $('master').value.trim();
+const msg = (t, ok) => { const m = $('msg'); m.textContent = t; m.className = ok ? 'ok' : 'err'; };
+
+async function api(method, path, body) {
+  const r = await fetch('/admin' + path, {
+    method,
+    headers: { 'Authorization': 'Bearer ' + master(),
+               'Content-Type': 'application/json' },
+    body: body ? JSON.stringify(body) : undefined });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error((data.detail && data.detail.error && data.detail.error.message) || r.status);
+  return data;
+}
+const money = (s, b) => '$' + (s ?? 0).toFixed(2) + (b != null ? ' / $' + b.toFixed(2) : '');
+
+async function refresh() {
+  try {
+    const teams = (await api('GET', '/teams')).data;
+    const keys = (await api('GET', '/keys')).data;
+    const byId = Object.fromEntries(teams.map(t => [t.id, t.alias]));
+    $('teams').tBodies[0].innerHTML = teams.map(t =>
+      `<tr><td>${esc(t.alias)}</td><td><span class="pill ${t.tier}">${t.tier}</span></td>
+       <td>${money(t.spend, t.max_budget)}</td><td>${esc(t.approved_by || '—')}</td>
+       <td><code>${t.id}</code></td></tr>`).join('') || empty(5);
+    $('keys').tBodies[0].innerHTML = keys.map(k =>
+      `<tr><td>${esc(k.alias || '—')}</td><td>${esc(byId[k.team_id] || '—')}</td>
+       <td>${money(k.spend, k.max_budget)}</td>
+       <td>${k.active ? '<span class=ok>yes</span>' : '<span class=err>revoked</span>'}</td>
+       <td><code>${k.id}</code></td>
+       <td>${k.active ? `<button class=ghost onclick="revoke('${k.id}')">revoke</button>` : ''}</td></tr>`
+      ).join('') || empty(6);
+    $('k_team').innerHTML = teams.map(t => `<option value="${t.id}">${esc(t.alias)}</option>`).join('');
+    msg('Connected — ' + teams.length + ' teams, ' + keys.length + ' keys.', true);
+  } catch (e) { msg('Error: ' + e.message, false); }
+}
+const empty = n => `<tr><td colspan="${n}" style="color:var(--muted)">none yet</td></tr>`;
+const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+async function createTeam() {
+  try {
+    const b = { alias: $('t_alias').value, tier: $('t_tier').value,
+                approved_by: $('t_approved').value || null };
+    const bud = parseFloat($('t_budget').value); if (!isNaN(bud)) b.max_budget = bud;
+    await api('POST', '/teams', b); msg('Team created.', true); refresh();
+  } catch (e) { msg('Error: ' + e.message, false); }
+}
+async function createKey() {
+  try {
+    const b = { team_id: $('k_team').value || null, alias: $('k_alias').value || null };
+    const bud = parseFloat($('k_budget').value); if (!isNaN(bud)) b.max_budget = bud;
+    const k = await api('POST', '/keys', b);
+    $('newkey').innerHTML = `<label>New key (shown once)</label><code>${k.key}</code>`;
+    msg('Key generated — copy it now, it is not stored.', true); refresh();
+  } catch (e) { msg('Error: ' + e.message, false); }
+}
+async function revoke(id) {
+  try { await api('DELETE', '/keys/' + id); msg('Key revoked.', true); refresh(); }
+  catch (e) { msg('Error: ' + e.message, false); }
+}
+</script>
+</body>
+</html>

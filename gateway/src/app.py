@@ -11,6 +11,7 @@ cut traffic over once smoke tests pass — see gateway/README.md.
 
 from __future__ import annotations
 
+import os
 import sys
 import time
 import uuid
@@ -18,12 +19,17 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
+_STATIC = os.path.join(os.path.dirname(__file__), "..", "static")
+
+from . import admin as admin_mod
 from . import auth as auth_mod
+from . import control as control_mod
 from .audit import Auditor, key_fingerprint
 from .config import Settings, load
 from .guardrail import Guardrail
+from .store import Store
 from .upstream import Upstream
 
 CHAT_PATH = "/v1/chat/completions"
@@ -37,12 +43,22 @@ async def lifespan(app: FastAPI):
     app.state.guardrail = getattr(app.state, "guardrail", None) or Guardrail(
         s.guardrail_url, s.guardrail_timeout)
     app.state.auditor = getattr(app.state, "auditor", None) or Auditor(s.audit_log)
+    # Control-plane store exists when we enforce locally OR when the admin API is
+    # enabled (so keys can be provisioned before flipping control_plane on).
+    if getattr(app.state, "store", None) is None and (s.control_plane or s.master_key):
+        app.state.store = Store(s.db_path)
     try:
         yield
     finally:
         for c in (app.state.upstream, app.state.guardrail):
             try:
                 await c.aclose()
+            except Exception:  # noqa: BLE001
+                pass
+        store = getattr(app.state, "store", None)
+        if store is not None:
+            try:
+                store.close()
             except Exception:  # noqa: BLE001
                 pass
 
@@ -66,7 +82,19 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     def get_auditor(request: Request) -> Auditor:
         return request.app.state.auditor
 
+    def get_store(request: Request) -> Optional[Store]:
+        return getattr(request.app.state, "store", None)
+
     app.dependency_overrides = {}  # tests populate this
+
+    # -- admin control plane (Phase 2) -------------------------------------
+    # The router self-guards via the master key; the UI page is network-gated
+    # (Cloudflare Access + Okta in the lab) and collects the master key client-side.
+    app.include_router(admin_mod.build_router())
+
+    @app.get("/admin/ui", include_in_schema=False)
+    async def admin_ui():
+        return FileResponse(os.path.join(_STATIC, "admin.html"))
 
     # -- branding / health -------------------------------------------------
     @app.get("/")
@@ -83,10 +111,16 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     @app.get("/v1/models")
     async def models(request: Request,
                      cfg: Settings = Depends(get_settings),
-                     up: Upstream = Depends(get_upstream)):
-        auth_mod.authenticate(request, require_key=cfg.require_key,
-                              key_prefix=cfg.key_prefix)
-        resp = await up.get("/v1/models", dict(request.headers))
+                     up: Upstream = Depends(get_upstream),
+                     store: Optional[Store] = Depends(get_store)):
+        principal = auth_mod.authenticate(request, require_key=cfg.require_key,
+                                          key_prefix=cfg.key_prefix)
+        if cfg.control_plane and store is not None and principal is not None:
+            try:  # listing costs nothing — validate the key, skip budget
+                control_mod.authorize(store, principal.key, None, enforce_budget=False)
+            except control_mod.Denied as d:
+                raise HTTPException(status_code=d.status, detail=d.as_detail())
+        resp = await up.get("/v1/models", _upstream_headers(dict(request.headers), cfg))
         return JSONResponse(_safe_json(resp), status_code=resp.status_code)
 
     # -- the endpoint ------------------------------------------------------
@@ -95,7 +129,8 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                                cfg: Settings = Depends(get_settings),
                                up: Upstream = Depends(get_upstream),
                                gr: Guardrail = Depends(get_guardrail),
-                               audit: Auditor = Depends(get_auditor)):
+                               audit: Auditor = Depends(get_auditor),
+                               store: Optional[Store] = Depends(get_store)):
         t0 = time.perf_counter()
         rid = uuid.uuid4().hex
         principal = auth_mod.authenticate(
@@ -116,6 +151,15 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                         duration_ms=round((time.perf_counter() - t0) * 1000, 1),
                         guardrail_enforce=cfg.guardrail_enforce, **extra)
 
+        # --- control plane: authorize the key + check budget (Phase 2) ----
+        authz = None
+        if cfg.control_plane and store is not None and principal is not None:
+            try:
+                authz = control_mod.authorize(store, principal.key, model)
+            except control_mod.Denied as d:
+                audit.emit(**_row(status="denied", phase="authz", code=d.code))
+                raise HTTPException(status_code=d.status, detail=d.as_detail())
+
         # --- pre-call guardrail (input) -----------------------------------
         if cfg.guardrail_enforce:
             res = await gr.check("user", gr.prompt_text(body), request_id=rid)
@@ -128,7 +172,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                               "type": "blocked_by_guardrail", "guardrail": "nemo",
                               "findings": res.get("findings", [])}})
 
-        headers = dict(request.headers)
+        headers = _upstream_headers(dict(request.headers), cfg)
         headers["x-gateway-request-id"] = rid
 
         # --- streaming passthrough ----------------------------------------
@@ -142,9 +186,10 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                 finally:
                     await resp.aclose()
                     audit.emit(**_row(status=resp.status_code, phase="stream",
-                                      # output rail on token streams is a known
-                                      # gap — see gateway/README.md.
-                                      guardrail_output="skipped_stream"))
+                                      # output rail AND spend metering on token
+                                      # streams are known gaps — see gateway/README.md.
+                                      guardrail_output="skipped_stream",
+                                      billed=("skipped_stream" if authz else None)))
 
             return StreamingResponse(
                 body_iter(), status_code=resp.status_code,
@@ -168,13 +213,28 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
                     "error": {"message": res.get("message", "Response blocked by guardrail."),
                               "type": "blocked_by_guardrail", "guardrail": "nemo"}})
 
-        usage = data.get("usage") if isinstance(data, dict) else None
+        # --- meter spend against the key + team (Phase 2) -----------------
+        pt, ct = control_mod.usage_tokens(data)
+        cost = None
+        if authz is not None and store is not None:
+            cost = control_mod.record(store, request_id=rid, authz=authz, model=model,
+                                      prompt_tokens=pt, completion_tokens=ct)
         audit.emit(**_row(status=resp.status_code,
-                          prompt_tokens=(usage or {}).get("prompt_tokens"),
-                          completion_tokens=(usage or {}).get("completion_tokens")))
+                          prompt_tokens=pt or None, completion_tokens=ct or None,
+                          cost=cost))
         return JSONResponse(data, status_code=resp.status_code)
 
     return app
+
+
+def _upstream_headers(headers: dict, cfg: Settings) -> dict:
+    """When the control plane owns keys, the caller's gateway key is validated
+    locally and swapped for the single upstream service credential on the hop to
+    LiteLLM. Without control_plane/upstream_key, the caller's key passes through."""
+    if cfg.control_plane and cfg.upstream_key:
+        headers = dict(headers)
+        headers["authorization"] = f"Bearer {cfg.upstream_key}"
+    return headers
 
 
 def _safe_json(resp):

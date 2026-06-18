@@ -133,6 +133,14 @@ services:
       # moves guardrail enforcement onto the façade (then remove the guardrails:
       # block from litellm-config.yaml). Audit rows are written either way.
       GATEWAY_GUARDRAIL_ENFORCE: "false"
+      # Phase 2 control plane (docs/own-gateway.md). Default OFF: keys/budgets
+      # stay in LiteLLM. Flip CONTROL_PLANE to "true" + set MASTER_KEY (admin) and
+      # UPSTREAM_KEY (one LiteLLM service key) to move key management onto the
+      # façade — cutover steps in gateway/README.md. Secrets via Secrets Manager.
+      GATEWAY_CONTROL_PLANE: "false"
+      GATEWAY_DB_PATH: "/var/lib/gateway/control.db"
+      GATEWAY_MASTER_KEY: "${GATEWAY_MASTER_KEY:-}"
+      GATEWAY_UPSTREAM_KEY: "${GATEWAY_UPSTREAM_KEY:-}"
       # The façade only ever talks to intra-docker services (litellm, nemo); it
       # never egresses to providers — that hop stays on litellm. Keep it off Squid.
       HTTP_PROXY: ""
@@ -140,6 +148,7 @@ services:
       NO_PROXY: "litellm,nemo-guardrails,localhost,127.0.0.1"
     volumes:
       - gateway-logs:/var/log/gateway
+      - gateway-data:/var/lib/gateway
     depends_on:
       litellm:
         condition: service_started
@@ -181,3 +190,4 @@ volumes:
   litellm-pg:
   nemo-logs:
   gateway-logs:
+  gateway-data:

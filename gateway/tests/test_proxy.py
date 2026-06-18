@@ -8,7 +8,7 @@ def test_chat_completion_proxies(client):
     assert r.status_code == 200
     body = r.json()
     assert body["choices"][0]["message"]["content"] == "pong"
-    assert body["usage"]["total_tokens"] == 8
+    assert body["usage"]["total_tokens"] == 2000
 
 
 def test_audit_row_written_with_tokens_and_redacted_key(make_client):
@@ -19,7 +19,7 @@ def test_audit_row_written_with_tokens_and_redacted_key(make_client):
     assert len(rows) == 1
     row = rows[0]
     assert row["model"] == "claude-opus-4-8"
-    assert row["prompt_tokens"] == 7 and row["completion_tokens"] == 1
+    assert row["prompt_tokens"] == 1000 and row["completion_tokens"] == 1000
     assert row["status"] == 200
     # Key is fingerprinted, never raw.
     assert row["key"] is not None and "sk-test" not in row["key"]

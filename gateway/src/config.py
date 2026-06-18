@@ -57,6 +57,22 @@ class Settings:
     # NeMo's decisions.log so rows join on request_id across the stack.
     audit_log: str = os.environ.get("GATEWAY_AUDIT_LOG", "/var/log/gateway/requests.log")
 
+    # --- Phase 2: control plane (docs/own-gateway.md) -----------------------
+    # When OFF (default), the façade shape-checks the key and forwards it; LiteLLM
+    # remains the source of truth for keys/budgets (Phase 1 behavior). When ON,
+    # the façade validates the presented key against ITS OWN store, enforces
+    # per-key/per-team model allow-lists + budgets, records spend, and forwards
+    # upstream under `upstream_key` (a single LiteLLM service credential) — so
+    # key management no longer lives in LiteLLM.
+    control_plane: bool = _flag("GATEWAY_CONTROL_PLANE", False)
+    db_path: str = os.environ.get("GATEWAY_DB_PATH", "/var/lib/gateway/control.db")
+    # Admin API credential (Bearer). Admin routes 404/401 if unset.
+    master_key: str = os.environ.get("GATEWAY_MASTER_KEY", "")
+    # Credential the façade uses to call LiteLLM when control_plane is ON. With
+    # control_plane ON and this set, the caller's gateway key is validated locally
+    # and swapped for this on the upstream hop. Empty -> forward caller key as-is.
+    upstream_key: str = os.environ.get("GATEWAY_UPSTREAM_KEY", "")
+
 
 def load() -> "Settings":
     return Settings()
