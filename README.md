@@ -583,6 +583,12 @@ broker ([ADR-015](docs/decisions.md)), approved-org tenancy
 see the control map in [`docs/control-mapping.md`](docs/control-mapping.md). The
 near-term items below extend it.
 
+- **Own the gateway / reduce the LiteLLM dependency.** The LiteLLM image is now
+  pinned by digest with an SBOM ([`docs/litellm-supply-chain.md`](docs/litellm-supply-chain.md)),
+  and an OpenAI-compatible **façade** ([`gateway/`](gateway)) fronts it so the
+  brand, auth gate, guardrail enforcement, and audit trail are ours — LiteLLM
+  becomes an internal engine ("embed, don't expose"). Phases + rationale in
+  [`docs/own-gateway.md`](docs/own-gateway.md).
 - **More government resources behind the gateway.** Add `.gov` sources as
   additional read-only `compliance-mcp` tools so the same authenticated key
   reaches them through `/v1`. The **Federal Register** (`federal_register_search`,
