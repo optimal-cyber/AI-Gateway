@@ -230,6 +230,19 @@ litellm_settings:
     models: []
     user_role: "proxy_admin"
 
+  # --- Admin UI branding: Optimal Labs / AI Gateway -------------------------
+  # The Optimal Horizon mark on the LiteLLM Admin control plane. Served by the
+  # landing site (Cloudflare Pages — landing/optimal-horizon.svg) so the admin's
+  # browser can fetch it cross-subdomain; goes live once Pages redeploys AND the
+  # litellm container is recreated. NOTE: the open-source UI still shows the
+  # "LiteLLM" wordmark in places — full white-label (name removal, colors) and
+  # custom Swagger-docs branding are LiteLLM Enterprise features. Verify the
+  # ui_theme_config keys against your deployed LiteLLM version; if an SVG favicon
+  # doesn't render, swap favicon_url for an .ico.
+  ui_theme_config:
+    logo_url: "https://optimallabs.io/optimal-horizon.svg"
+    favicon_url: "https://optimallabs.io/optimal-horizon.svg"
+
 # --- multi-cloud routing / failover (ADR-015 / roadmap G2) -------------------
 # Same-named model_list deployments form a routing group; the proxy load-balances
 # and retries the next deployment on failure. `gov/claude-opus-4-8` spans AWS
