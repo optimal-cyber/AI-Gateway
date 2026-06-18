@@ -318,10 +318,15 @@ for model in ("gpt-4o", "claude-opus-4-8", "claude-sonnet-4-6",
 
 The model list is just config (`docker/gateway-host/litellm-config.yaml`) — add
 any model any connected provider supports and every virtual key can reach it,
-subject to its per-key allow-list. In this lab the endpoint is published
-**privately** — in-VPC clients reach it at `http://gateway-host:4000/v1`; an
-external CI client fronts it with a Cloudflare Access service token. It is never
-exposed to the public internet.
+subject to its per-key allow-list. Every entry carries a **compliance posture
+tag** ([ADR-014](docs/decisions.md)): the models above are the `dev` tier
+(commercial boundary), and a `gov` tier targets government-ready boundaries
+(Claude Platform on AWS for full parity; Amazon Bedrock in GovCloud as the
+working path). The `gov` entry is **config-ready but not live in this lab** — it
+goes live when GovCloud credentials and egress are provisioned (roadmap G1). In
+this lab the endpoint is published **privately** — in-VPC clients reach it at
+`http://gateway-host:4000/v1`; an external CI client fronts it with a Cloudflare
+Access service token. It is never exposed to the public internet.
 
 The same endpoint runs the NeMo guardrail **before** the provider is ever called.
 An injection prompt is blocked pre-call — no provider request, no tokens, no spend:
@@ -381,7 +386,10 @@ gateway." It lives at `gateway.optimallabs.io/ui`, gated by Cloudflare Access
 - **Guardrail activity** — which requests the NeMo rail blocked, pre- and post-call.
 - **Model + tool routing** — the model allow-list each key can reach (`gpt-4o`,
   `claude-opus-4-8`, `claude-sonnet-4-6`, `claude-haiku-4-5`, `claude-fable-5`)
-  and the MCP/government-resource tools wired behind the endpoint.
+  and the MCP/government-resource tools wired behind the endpoint. Every model
+  now carries a **compliance posture tier** — `dev` (commercial boundary) or
+  `gov` (government-ready boundary) — so an allow-list can gate by tier
+  ([ADR-014](docs/decisions.md); roadmap G1).
 
 `scripts/run-smoke-tests.sh` exercises the endpoint end-to-end against a live
 gateway: frontier-model reachability, the pre-call guardrail block, and a
