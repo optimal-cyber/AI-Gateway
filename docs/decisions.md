@@ -666,3 +666,84 @@ DNS late in a build is much lower than you fear when (a) both old and new zones
 live in the same Cloudflare account, and (b) the Access app destination model
 supports multi-hostname so policies can be shared. The whole swap was ~30 min
 of dashboard work and one 60-second SSM redeploy.
+
+---
+
+## ADR-014 — Government-ready model tiers and per-model compliance posture
+
+**Date:** 2026-06-18
+**Status:** Accepted
+**Implements:** [`docs/roadmap.md`](roadmap.md) Phase G1.
+
+### Context
+
+The gateway started as one team in front of commercial OpenAI/Anthropic
+endpoints. The north star ([roadmap](roadmap.md)) is an access layer that lets
+approved organizations reach *government-ready* AI across multiple clouds. Before
+adding clouds (G2) or gating tenants by what they may reach (G3), the gateway
+needs a machine-readable answer to one question per model: **"is this deployment
+served from a compliant boundary, and what is its posture?"** Without that,
+"government-ready" is a marketing word, not a routing/authorization input.
+
+A model's compliance posture is a property of *where and how it is served*, not
+of the weights. `gpt-4o` on commercial OpenAI and the same family on Azure
+Government are the same model with very different postures. So the unit that
+carries the tag is the gateway's `model_list` entry (the deployment), not the
+bare model name.
+
+### Decision
+
+1. **Two tiers, tagged on every `model_list` entry** via LiteLLM `model_info`:
+   - `tier: dev` — commercial / non-government boundary. Default for the existing
+     OpenAI-direct and Anthropic-direct entries. Fine for development and demos;
+     **never** presented as government-ready.
+   - `tier: gov` — served from a documented government-ready boundary (below).
+
+2. **Posture schema** (`model_info`), on every entry:
+
+   | field | values |
+   |---|---|
+   | `tier` | `gov` \| `dev` |
+   | `boundary` | human-readable boundary (e.g. `AWS GovCloud (Bedrock)`) |
+   | `cloud` | `aws` \| `azure` \| `gcp` \| `anthropic` \| `openai` |
+   | `region` | serving region (e.g. `us-gov-west-1`) |
+   | `fedramp` | `high` \| `moderate` \| `in-process` \| `none` |
+   | `residency` | `us` \| other |
+   | `retention` | `none` \| `30d` \| `provider-default` |
+   | `il` | DoD Impact Level eligibility, or `n/a` |
+
+3. **What counts as a `gov` boundary.** A boundary qualifies for `tier: gov` only
+   when its operator publishes the authorization the tag claims (FedRAMP / IL /
+   residency). At G1 the recognized targets are:
+   - **Claude Platform on AWS** — Anthropic-operated via AWS (SigV4 + AWS IAM,
+     US). Chosen as the first government-ready *Claude* path because it has **full
+     API parity** with the first-party API (server-side tools, Managed Agents),
+     unlike the partner-operated boundaries.
+   - **Amazon Bedrock in AWS GovCloud** — FedRAMP High / IL4–IL5 boundary,
+     `anthropic.`-prefixed model IDs; partner-operated, so a feature subset (no
+     Anthropic server-side tools / Managed Agents).
+   - (G2 extends the same tagging discipline to Azure Government / Microsoft
+     Foundry and Vertex AI Assured Workloads.)
+
+4. **The tag is a claim about the deployment boundary, evidenced by the boundary
+   operator — not an attestation by this lab.** A `gov` tag asserts "served from a
+   boundary its operator has authorized to that posture," nothing more. The lab
+   inherits no authorization and stays a reference architecture.
+
+### Consequences
+
+- `litellm-config.yaml` carries `model_info` posture on every entry; commercial
+  endpoints are explicitly `tier: dev`, and gov-tier entries exist for the
+  recognized boundaries.
+- **Gov-tier entries are config-ready but not live in this lab.** The lab runs in
+  a commercial AWS account (`317839577064`, us-east-1) with no GovCloud /
+  Claude-Platform-on-AWS credentials. The entries provision routing + posture;
+  they go live once the gov boundary's credentials (Secrets Manager) and egress
+  (Squid allowlist) are added. Model strings carry the same "verify against your
+  deployed LiteLLM version" caveat as the existing entries.
+- The `tier` field becomes the input G3 uses for per-org model allow-lists (an
+  org may be approved for `dev` only, or for `gov`).
+- The smoke test asserts a `gov`-tagged model is *registered* at the gateway
+  (`/v1/models`); the live call SKIPs until gov credentials exist (T-GW-5).
+- Honesty guardrail unchanged: README/landing keep "government-ready
+  architecture," never "this lab is authorized."

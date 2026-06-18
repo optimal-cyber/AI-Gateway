@@ -7,37 +7,122 @@
 # (ADR-009 Phase 2 dependency).
 # =============================================================================
 
-# All frontier models behind one endpoint + one virtual key. Add any model a
-# connected provider supports here; per-key allow-lists decide who can reach it.
-# Anthropic IDs verified against the claude-api reference (current frontier line:
-# Fable 5 most capable; Opus 4.8 default; Sonnet 4.6 balanced; Haiku 4.5 fast).
+# Models behind one endpoint + one virtual key, each tagged with a compliance
+# posture (model_info, ADR-014): tier=dev (commercial boundary) or tier=gov
+# (government-ready boundary). Per-key allow-lists decide who can reach which tier
+# (roadmap G3). Verify model strings / provider wiring against the LiteLLM version
+# you deploy — see the header note above. Anthropic IDs verified against the
+# claude-api reference (Fable 5 most capable; Opus 4.8 default; Sonnet 4.6
+# balanced; Haiku 4.5 fast).
 model_list:
-  # --- OpenAI ---------------------------------------------------------------
+  # ===========================================================================
+  # tier: dev — commercial boundaries (development / demos; never "gov-ready")
+  # ===========================================================================
   - model_name: gpt-4o
     litellm_params:
       model: openai/gpt-4o
       api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      tier: dev
+      boundary: "commercial (OpenAI-direct)"
+      cloud: openai
+      region: us
+      fedramp: none
+      residency: us
+      retention: provider-default
+      il: n/a
 
-  # --- Anthropic (current frontier lineup) ----------------------------------
   - model_name: claude-fable-5            # most capable
     litellm_params:
       model: anthropic/claude-fable-5
       api_key: os.environ/ANTHROPIC_API_KEY
+    model_info:
+      tier: dev
+      boundary: "commercial (Anthropic-direct)"
+      cloud: anthropic
+      region: us
+      fedramp: none
+      residency: us
+      retention: provider-default
+      il: n/a
 
   - model_name: claude-opus-4-8           # default Opus tier
     litellm_params:
       model: anthropic/claude-opus-4-8
       api_key: os.environ/ANTHROPIC_API_KEY
+    model_info:
+      tier: dev
+      boundary: "commercial (Anthropic-direct)"
+      cloud: anthropic
+      region: us
+      fedramp: none
+      residency: us
+      retention: provider-default
+      il: n/a
 
   - model_name: claude-sonnet-4-6         # speed / intelligence balance
     litellm_params:
       model: anthropic/claude-sonnet-4-6
       api_key: os.environ/ANTHROPIC_API_KEY
+    model_info:
+      tier: dev
+      boundary: "commercial (Anthropic-direct)"
+      cloud: anthropic
+      region: us
+      fedramp: none
+      residency: us
+      retention: provider-default
+      il: n/a
 
   - model_name: claude-haiku-4-5          # fastest / cheapest
     litellm_params:
       model: anthropic/claude-haiku-4-5
       api_key: os.environ/ANTHROPIC_API_KEY
+    model_info:
+      tier: dev
+      boundary: "commercial (Anthropic-direct)"
+      cloud: anthropic
+      region: us
+      fedramp: none
+      residency: us
+      retention: provider-default
+      il: n/a
+
+  # ===========================================================================
+  # tier: gov — government-ready boundaries (ADR-014)
+  # ===========================================================================
+  # CONFIG-READY, NOT LIVE in this lab: the lab runs in a commercial AWS account
+  # (us-east-1, ADR — see README) with no GovCloud / Claude-Platform-on-AWS
+  # credentials. The entry below provisions routing + the posture tag; it goes
+  # live once gov creds (Secrets Manager) and egress (Squid allowlist: the gov
+  # provider endpoint) are added.
+  #
+  # First government-ready *Claude* path = Claude Platform on AWS (Anthropic-
+  # operated; SigV4 + AWS IAM; US; FULL API parity incl. server-side tools /
+  # Managed Agents). Its LiteLLM provider wiring for the
+  # aws-external-anthropic.<region>.api.aws endpoint must be confirmed against the
+  # deployed LiteLLM version, so it is left as a documented target rather than a
+  # guessed provider string. Until confirmed, Amazon Bedrock in GovCloud is the
+  # working gov Claude path (partner-operated; feature subset — no Anthropic
+  # server-side tools / Managed Agents):
+  - model_name: gov/claude-opus-4-8
+    litellm_params:
+      # Verify the exact Bedrock model ID / cross-region inference profile for
+      # your GovCloud region against the Bedrock console before enabling.
+      model: bedrock/anthropic.claude-opus-4-8
+      aws_region_name: us-gov-west-1
+      # Creds resolve from a GovCloud IAM role/profile to be provisioned — no
+      # static keys in this lab (ADR-006). LiteLLM reads them from the instance
+      # role or AWS_* in the tmpfs .env.
+    model_info:
+      tier: gov
+      boundary: "AWS GovCloud (Bedrock)"
+      cloud: aws
+      region: us-gov-west-1
+      fedramp: high
+      residency: us
+      retention: none
+      il: "IL4/IL5-eligible"
 
 # --- Guardrails: NeMo as a DaaS hook on input (pre) and output (post) --------
 # Both point at the same custom class (../nemo_guardrail.py, mounted + on

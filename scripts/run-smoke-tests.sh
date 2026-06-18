@@ -8,9 +8,9 @@
 # when a precondition is missing, so it is safe to run at any phase.
 #
 # Mapped to docs/test-plan.md: T-EG-1..4 (egress) + container healthchecks +
-# T-GW-1..4 (the AI API gateway endpoint: frontier models, pre-call guardrail
-# block, and a government-resource lookup through /v1 — the gateway's real face).
-# Does NOT perform identity-plane checks — that is scripts/test-sso.sh.
+# T-GW-1..5 (the AI API gateway endpoint: frontier models, pre-call guardrail
+# block, a government-resource lookup through /v1, and a registered gov-tier
+# model — the gateway's real face). No identity-plane checks — see test-sso.sh.
 # =============================================================================
 set -uo pipefail
 
@@ -182,6 +182,19 @@ else
     sk "[T-GW-4] endpoint answered (HTTP 200) but no gov-tool signal — check MCP wiring / SAM.gov key"
   else
     no "[T-GW-4] gov-resource lookup expected 200, got ${code}"
+  fi
+
+  # T-GW-5: a government-ready (gov-tier, ADR-014) model is registered at the
+  # endpoint. model_list tags it tier=gov; /v1/models exposes the name. The live
+  # call SKIPs in this lab (no GovCloud creds) — registration is the proof.
+  code=$(curl -sS --max-time 15 -o /tmp/_gw_models -w '%{http_code}' \
+    -H "Authorization: Bearer ${GW_KEY}" "${GW_URL}/v1/models" 2>/dev/null || echo 000)
+  if [[ "${code}" == "200" ]] && grep -q 'gov/claude' /tmp/_gw_models 2>/dev/null; then
+    ok "[T-GW-5] gov-tier model registered at /v1/models (live call SKIP — no GovCloud creds in this lab)"
+  elif [[ "${code}" == "200" ]]; then
+    no "[T-GW-5] no gov/* model at /v1/models — check the ADR-014 gov tier in litellm-config"
+  else
+    no "[T-GW-5] /v1/models expected 200, got ${code}"
   fi
 fi
 
