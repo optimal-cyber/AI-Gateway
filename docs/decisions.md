@@ -909,3 +909,54 @@ provisioned:
 - State locking makes concurrent org-provisioning safe; versioning gives rollback;
   SSE + public-access-block protects state (which can carry sensitive outputs).
 - ADR-001 is superseded but left in place as history.
+
+---
+
+## ADR-018 — Tenant- and tier-scoped governance
+
+**Date:** 2026-06-18
+**Status:** Accepted
+**Implements:** [`docs/roadmap.md`](roadmap.md) Phase G4. **Builds on:** ADR-014/016.
+
+### Context
+
+G3 made each org a tenant (team) with a tier-gated allow-list. Governance was
+still global: the same guardrails, a flat budget cap, no gate on who may be
+granted the sensitive (gov) tier. G4 attaches governance to the tenant *and* its
+tier, so a gov tenant is **demonstrably governed more strictly** than a dev
+tenant — the difference visible in the decision logs (the G4 done-when).
+
+### Decision
+
+1. **Residency as policy, not just routing.** A gov tenant's allow-list is `gov/*`
+   only (ADR-016). G4 elevates that from a routing convenience to a governance
+   rule: a gov tenant's prompts/outputs must never traverse a commercial boundary.
+   The tier allow-list is the enforcement point; provisioning a gov team with any
+   `dev` model is a policy violation.
+
+2. **Mandatory fail-closed rails for gov.** Both NeMo rails (input pre_call,
+   output post_call) are global `default_on` and fail closed (ADR-003). For gov
+   tenants they are *mandatory and non-removable* — the output rail especially
+   (it catches model-generated leaks). Disabling a rail for a gov tenant is a
+   policy violation.
+
+3. **Per-tenant budget caps + alerting.** Each team carries a hard `max_budget`
+   with a reset period (`budget_duration`) and a `soft_budget` alert threshold
+   (default 80%). Spend/budget alerts fire through LiteLLM `alerting` (config-ready;
+   webhook from env). gov tenants are provisioned with tighter defaults than dev.
+
+4. **Approval gate for the sensitive tier.** Provisioning a gov tenant requires an
+   explicit approver — `provision-org.sh --approved-by <name>` is mandatory for
+   `--tier gov` and recorded in the team `metadata`. dev provisioning needs none.
+
+### Consequences
+
+- A gov tenant differs from a dev tenant in four governed ways: constrained to gov
+  boundaries, mandatory rails, tighter budget + soft-budget alert, and an approval
+  record. The residency difference is visible in the decision logs (gov calls only
+  ever hit gov boundaries) — the G4 done-when.
+- Enforcement reuses what exists (tier allow-list, fail-closed rails, LiteLLM
+  budgets) — G4 is policy + the approval gate + alerting wiring, not new gateway
+  code.
+- **Acceptance (G4 done-when):** a gov tenant gets stricter enforcement than a dev
+  tenant, shown in the logs (test-plan T-GOV-1; live gateway + master key).
