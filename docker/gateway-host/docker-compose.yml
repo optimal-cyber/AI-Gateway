@@ -125,7 +125,10 @@ services:
     ports:
       - "4001:4001"
     environment:
-      GATEWAY_NAME: "AI Gateway"
+      # Branding — set these to your product (name + logo URL) so the surface is
+      # yours, not a LiteLLM wrapper. Overridable via the host env / Secrets Manager.
+      GATEWAY_NAME: "${GATEWAY_NAME:-AI Gateway}"
+      GATEWAY_LOGO_URL: "${GATEWAY_LOGO_URL:-https://optimallabs.io/optimal-horizon.svg}"
       GATEWAY_UPSTREAM_URL: "http://litellm:4000"
       GATEWAY_GUARDRAIL_URL: "http://nemo-guardrails:8000"
       # Default OFF: litellm still runs the NeMo rails today, so enforcing here
@@ -188,7 +191,8 @@ services:
       NO_PROXY: ""
       no_proxy: ""
     depends_on:
-      litellm:
+      # Front door is the façade (:4001); the tunnel routes gateway.<domain> here.
+      gateway-facade:
         condition: service_started
 
 volumes:

@@ -178,6 +178,10 @@ async function revoke(id) {
       const h = document.querySelector('header h1');
       if (h) h.textContent = label;
     }
+    if (info && info.logo) {
+      const img = document.querySelector('header img');
+      if (img) { img.src = info.logo; img.alt = info.service || 'Gateway'; }
+    }
   } catch (e) { /* keep the static default */ }
 })();
 </script>

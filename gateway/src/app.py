@@ -104,7 +104,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     # -- branding / health -------------------------------------------------
     @app.get("/")
     async def root(cfg: Settings = Depends(get_settings)):
-        return {"service": cfg.name, "api": "openai-compatible",
+        return {"service": cfg.name, "logo": cfg.logo_url, "api": "openai-compatible",
                 "endpoints": ["/v1/chat/completions", "/v1/models", "/health"]}
 
     @app.get("/health")
