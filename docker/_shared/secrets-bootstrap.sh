@@ -67,7 +67,9 @@ case "${AI_LAB_ROLE}" in
   gateway)
     put OPENAI_API_KEY              "$(secret openai_api_key)"
     put ANTHROPIC_API_KEY           "$(secret anthropic_api_key)"
-    put SAM_GOV_API_KEY             "$(secret sam_gov_api_key)"
+    # Optional: unseeded -> SAM.gov lookups degrade (the MCP still runs). Tolerant
+    # so a missing SAM key never aborts the whole gateway stack.
+    put SAM_GOV_API_KEY             "$(secret_opt sam_gov_api_key)"
     put LITELLM_MASTER_KEY          "$(secret litellm_master_key)"
     put LITELLM_SALT_KEY            "$(secret litellm_salt_key)"
     PG_PW="$(secret postgres_password)"
@@ -81,16 +83,19 @@ case "${AI_LAB_ROLE}" in
     put GATEWAY_MASTER_KEY          "$(secret_opt gateway_master_key)"
     put GATEWAY_UPSTREAM_KEY        "$(secret_opt gateway_upstream_key)"
     put GATEWAY_BOOTSTRAP_KEY       "$(secret_opt gateway_bootstrap_key)"
-    # Okta (LiteLLM admin OIDC, direct — ADR-007)
+    # Okta (LiteLLM admin OIDC, direct — ADR-007). OPTIONAL now that the façade is
+    # the front door and LiteLLM's /ui is internal-only: unseeded -> LiteLLM SSO is
+    # simply disabled (the container still starts and /v1 works), so a missing Okta
+    # config never blocks the stack. Seed these for full LiteLLM-/ui SSO.
     # OKTA_URL is a shell-only intermediate used to build the GENERIC_* URLs.
     # Do NOT put OKTA_TENANT_URL into the env — in LiteLLM >= 1.86 it triggers
     # the Okta-specific SSO path which prepends it to GENERIC_AUTHORIZATION_ENDPOINT,
     # producing a malformed URL like https://x.comhttps://x.com/oauth2/v1/authorize.
     # GENERIC_* alone is the documented setup; the URL already contains the tenant.
-    OKTA_URL="$(secret okta_tenant_url)"
+    OKTA_URL="$(secret_opt okta_tenant_url)"
     put PROXY_BASE_URL              "https://gateway.optimallabs.io"
-    put GENERIC_CLIENT_ID           "$(secret okta_litellm_client_id)"
-    put GENERIC_CLIENT_SECRET       "$(secret okta_litellm_client_secret)"
+    put GENERIC_CLIENT_ID           "$(secret_opt okta_litellm_client_id)"
+    put GENERIC_CLIENT_SECRET       "$(secret_opt okta_litellm_client_secret)"
     put GENERIC_AUTHORIZATION_ENDPOINT "${OKTA_URL}/oauth2/v1/authorize"
     put GENERIC_TOKEN_ENDPOINT      "${OKTA_URL}/oauth2/v1/token"
     put GENERIC_USERINFO_ENDPOINT   "${OKTA_URL}/oauth2/v1/userinfo"

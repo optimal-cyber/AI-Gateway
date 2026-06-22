@@ -25,9 +25,11 @@ def _flag(name: str, default: bool) -> bool:
 
 @dataclass(frozen=True)
 class Settings:
-    # Branding — the façade owns `/` and the product name (the thing white-label
-    # was gated behind upstream). See docs/own-gateway.md.
+    # Branding — the façade owns `/`, the product name, and the logo (the things
+    # white-label was gated behind upstream). Drive these to make the surface
+    # yours, not a LiteLLM wrapper. See docs/own-gateway.md.
     name: str = os.environ.get("GATEWAY_NAME", "AI Gateway")
+    logo_url: str = os.environ.get("GATEWAY_LOGO_URL", "https://optimallabs.io/optimal-horizon.svg")
 
     # Bind.
     host: str = os.environ.get("GATEWAY_HOST", "0.0.0.0")
