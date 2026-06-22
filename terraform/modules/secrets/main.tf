@@ -29,6 +29,10 @@ locals {
     "okta_litellm_client_id",
     "okta_litellm_client_secret",
     "litellm_virtual_key_webui",
+    # AI Gateway façade (control plane — gateway/, docs/own-gateway.md):
+    "gateway_master_key",      # façade admin API credential
+    "gateway_upstream_key",    # OPTIONAL — LiteLLM key for the upstream hop (falls back to litellm_master_key)
+    "gateway_bootstrap_key",   # first-boot key: seeds a default team+key; Open WebUI uses it
     "gateway_host_private_ip", # populated by root from compute output
   ])
 }

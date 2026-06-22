@@ -24,7 +24,7 @@ locals {
 # the proxy egresses to the internet, not these hosts.
 resource "aws_security_group" "app" {
   name        = "${var.project_name}-app-sg"
-  description = "App hosts: no public ingress; 4000 intra-subnet; egress to VPC only."
+  description = "App hosts: no public ingress; 4000/4001 intra-subnet; egress to VPC only."
   vpc_id      = var.vpc_id
 
   tags = { Name = "${var.project_name}-app-sg" }
@@ -37,6 +37,18 @@ resource "aws_vpc_security_group_ingress_rule" "litellm_4000" {
   cidr_ipv4         = var.app_subnet_cidrs[count.index]
   from_port         = 4000
   to_port           = 4000
+  ip_protocol       = "tcp"
+}
+
+# The gateway façade (gateway/) is the front door: Open WebUI and the Cloudflare
+# tunnel reach it on 4001 intra-subnet. LiteLLM (4000) stays internal behind it.
+resource "aws_vpc_security_group_ingress_rule" "gateway_facade_4001" {
+  count             = length(var.app_subnet_cidrs)
+  security_group_id = aws_security_group.app.id
+  description       = "Gateway facade port from app subnet ${count.index} (chat-host + tunnel to gateway-host)"
+  cidr_ipv4         = var.app_subnet_cidrs[count.index]
+  from_port         = 4001
+  to_port           = 4001
   ip_protocol       = "tcp"
 }
 

@@ -60,37 +60,41 @@ cd /opt/ai-lab/repo && ./scripts/run-smoke-tests.sh   # containers + egress all 
 
 ## Part B — demo the control plane (the screen that *is* the gateway)
 
-> **Branding note.** The off-brand LiteLLM Swagger/ReDoc pages at `/` and `/redoc`
-> are disabled (`NO_DOCS`/`NO_REDOC` on the litellm container), and the Admin UI
-> carries the Optimal Horizon logo (`ui_theme_config`). To make the bare root land
-> on the control plane, add a **Cloudflare Single Redirect** (Rules → Redirect
-> Rules) on `gateway.optimallabs.io`: when URI path equals `/`, 302 to `/ui`.
-> (The OSS UI still shows the "LiteLLM" wordmark in places — removing it entirely
-> is a LiteLLM Enterprise feature.)
+> The front door is the **façade** (`gateway.optimallabs.io` → `gateway-facade:4001`),
+> which owns the control plane (virtual keys, budgets, audit). It serves a branded
+> `/` and no Swagger; its admin UI is at **`/admin/ui`** (Optimal Horizon mark). To
+> land the bare root there, add a **Cloudflare Single Redirect** on
+> `gateway.optimallabs.io`: path `/` → 302 `/admin/ui`.
 
-1. Browser → **`https://gateway.optimallabs.io/ui`**.
+1. Browser → **`https://gateway.optimallabs.io/admin/ui`**.
 2. Cloudflare Access → Okta + MFA (must be `lab-admins`, US geo, WARP).
-3. Walk the LiteLLM Admin:
-   - **Models** — the `dev` tier (`gpt-4o`, `claude-*`) and the `gov` tier
-     (`gov/claude-opus-4-8`, `gov/gpt-4o`) both registered, with posture
-     (`model_info`).
-   - **Virtual keys / Teams** — per-team budgets + live spend.
-   - **Logs** — every call with identity, model, cost, tokens; guardrail blocks
-     show as `$0` / `0-token` **Failure** rows (the provider was never called).
+3. Paste the **master key** (`gateway_master_key`) and walk the control plane:
+   - **Teams** — per-org teams, tier (dev/gov) + budget + live spend.
+   - **Keys** — mint scoped/budgeted virtual keys; revoke; per-key spend.
+   - Create a reviewer team + key live, then call `/v1` with it (Part C).
+4. **Model registration + per-call logs** (incl. `$0`/0-token guardrail-blocked
+   rows) live in the **LiteLLM** admin behind the façade — reach it internally via
+   an SSM port-forward to `:4000/ui`, or publish it on a second hostname (see the
+   tunnel-ingress note in `terraform/modules/cloudflare/main.tf`).
 
-This — not the chat window — is the screen to present as "the gateway."
+This — the OpenAI endpoint + the control plane — not the chat window, is "the gateway."
 
 ## Part C — demo the OpenAI-compatible endpoint (the API *is* the gateway)
 
-From an SSM shell on **gateway-host** (the endpoint is private, on `:4000`):
+From an SSM shell on **gateway-host**. The front door is the **façade on `:4001`**
+(the smoke-test default); with the control plane on, callers use a **façade** key
+(the bootstrap key), not the LiteLLM master key:
 
 ```bash
-# Read the master key from the tmpfs .env (or use a virtual key):
-export LITELLM_KEY=$(sudo grep -oP 'LITELLM_MASTER_KEY=\K.*' /run/ai-lab/gateway.env)
-export GATEWAY_URL=http://127.0.0.1:4000
+# Use the façade bootstrap key from the tmpfs .env (a valid control-plane key):
+export LITELLM_KEY=$(sudo grep -oP 'GATEWAY_BOOTSTRAP_KEY=\K.*' /run/ai-lab/gateway.env)
+# GATEWAY_URL defaults to the façade :4001; set :4000 to test LiteLLM directly.
 
 cd /opt/ai-lab/repo && ./scripts/run-smoke-tests.sh
 ```
+
+Full reviewer/operator runbook (incl. how a dev gets a key and calls it from
+outside): [`operate.md`](operate.md).
 
 `T-GW-1..5` are the live proof: one key reaches `gpt-4o` **and**
 `claude-opus-4-8` (T-GW-1/2), an injection is **blocked pre-call** (T-GW-3, no

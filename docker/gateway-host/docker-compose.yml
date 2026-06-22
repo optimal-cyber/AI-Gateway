@@ -57,7 +57,11 @@ services:
       start_period: 20s
 
   litellm:
-    image: ghcr.io/berriai/litellm:main-stable
+    # PINNED BY DIGEST (supply-chain control — docs/litellm-supply-chain.md).
+    # `main-stable` is a floating tag; in a CMMC boundary the running image must
+    # be immutable + reproducible. Resolved digest of main-stable on 2026-06-18.
+    # Re-pin (and regenerate the SBOM) with scripts/pin-litellm-digest.sh.
+    image: ghcr.io/berriai/litellm@sha256:713e2a036aecc8f2cb24cdf0bdeffd893b4f37190d4b21eb9e26ac648939c67a
     restart: unless-stopped
     # Bound to 0.0.0.0:4000 — reachable from the chat host within the private
     # subnet (app SG allows 4000 intra-subnet only; never from the internet).
@@ -106,6 +110,62 @@ services:
       compliance-mcp:
         condition: service_healthy
 
+  # ---------------------------------------------------------------------------
+  # gateway-facade — OUR OpenAI-compatible front door (Phase 1, docs/own-gateway.md)
+  # Runs ALONGSIDE litellm on 4001. It owns the /v1 surface, the auth gate, the
+  # guardrail enforcement point, and the audit trail; it proxies provider work to
+  # the pinned litellm engine on 4000. Cut Open WebUI / the tunnel over from
+  # litellm:4000 -> gateway-facade:4001 once smoke tests pass (gateway/README.md).
+  # ---------------------------------------------------------------------------
+  gateway-facade:
+    build:
+      context: ../../gateway
+    restart: unless-stopped
+    # Intra-subnet only, same posture as litellm:4000 (never internet-facing).
+    ports:
+      - "4001:4001"
+    environment:
+      GATEWAY_NAME: "AI Gateway"
+      GATEWAY_UPSTREAM_URL: "http://litellm:4000"
+      GATEWAY_GUARDRAIL_URL: "http://nemo-guardrails:8000"
+      # Default OFF: litellm still runs the NeMo rails today, so enforcing here
+      # too would double every NeMo call. Flip to "true" as the cutover step that
+      # moves guardrail enforcement onto the façade (then remove the guardrails:
+      # block from litellm-config.yaml). Audit rows are written either way.
+      GATEWAY_GUARDRAIL_ENFORCE: "false"
+      # Phase 2 control plane (docs/own-gateway.md) — ON: the façade is the front
+      # door and owns virtual keys/budgets/audit. It validates caller keys against
+      # its own store and forwards to LiteLLM under UPSTREAM_KEY (falls back to the
+      # LiteLLM master key if a dedicated one isn't seeded). BOOTSTRAP_KEY seeds a
+      # default team + that key on first boot so Open WebUI + devs work immediately
+      # (admins mint scoped keys via /admin/ui). Set CONTROL_PLANE=false to revert
+      # to transparent-proxy mode (keys/budgets stay in LiteLLM).
+      GATEWAY_CONTROL_PLANE: "true"
+      GATEWAY_DB_PATH: "/var/lib/gateway/control.db"
+      GATEWAY_MASTER_KEY: "${GATEWAY_MASTER_KEY:-}"
+      GATEWAY_UPSTREAM_KEY: "${GATEWAY_UPSTREAM_KEY:-${LITELLM_MASTER_KEY}}"
+      GATEWAY_BOOTSTRAP_KEY: "${GATEWAY_BOOTSTRAP_KEY:-}"
+      GATEWAY_BOOTSTRAP_TEAM: "lab"
+      # The façade only ever talks to intra-docker services (litellm, nemo); it
+      # never egresses to providers — that hop stays on litellm. Keep it off Squid.
+      HTTP_PROXY: ""
+      HTTPS_PROXY: ""
+      NO_PROXY: "litellm,nemo-guardrails,localhost,127.0.0.1"
+    volumes:
+      - gateway-logs:/var/log/gateway
+      - gateway-data:/var/lib/gateway
+    depends_on:
+      litellm:
+        condition: service_started
+      nemo-guardrails:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "src.app", "--health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
   cloudflared:
     image: cloudflare/cloudflared:latest
     restart: unless-stopped
@@ -134,3 +194,5 @@ services:
 volumes:
   litellm-pg:
   nemo-logs:
+  gateway-logs:
+  gateway-data:

@@ -11,8 +11,10 @@ compliance tier it's approved for ([ADR-014](decisions.md)). See
 
 ## 0. Prerequisites
 
-- A running gateway and its **master key** (`LITELLM_MASTER_KEY`, from Secrets
-  Manager / the tmpfs `.env`).
+- A running gateway and its **master key**. `provision-org.sh` targets the
+  **façade** admin API by default (`GATEWAY_MASTER_KEY`); pass `--backend litellm`
+  for the legacy LiteLLM API (`LITELLM_MASTER_KEY`). Both come from Secrets
+  Manager / the tmpfs `.env`.
 - **Remote Terraform state migrated** ([ADR-017](decisions.md)) before
   provisioning real orgs.
 - The org's approved **tier**: `dev` (commercial boundary) or `gov`
@@ -29,20 +31,21 @@ Confirm the org and the tier it's approved for. A `gov`-approved org is
 From an SSM shell on gateway-host (master key in env):
 
 ```bash
-export LITELLM_MASTER_KEY=...                 # from the tmpfs .env / Secrets Manager
-export GATEWAY_URL=http://127.0.0.1:4000
+export GATEWAY_MASTER_KEY=...                 # façade admin key (tmpfs .env / Secrets Manager)
+export GATEWAY_URL=http://127.0.0.1:4001      # the façade (default); use 4000 + --backend litellm for legacy
 
-# dry-run first — prints the team + key payloads, sends nothing:
-./scripts/provision-org.sh --org "Acme Defense" --tier gov --budget 250
+# dry-run first — prints the team + key payloads, sends nothing (gov needs --approved-by):
+./scripts/provision-org.sh --org "Acme Defense" --tier gov --approved-by "<name>" --budget 250
 
 # then apply:
-./scripts/provision-org.sh --org "Acme Defense" --tier gov --budget 250 --apply
+./scripts/provision-org.sh --org "Acme Defense" --tier gov --approved-by "<name>" --budget 250 --apply
 ```
 
-The script creates the team (`/team/new`) with the tier-scoped model allow-list +
-budget, then mints a virtual key (`/key/generate`). It prints the new `team_id`
+The script creates the team (`/admin/teams`) with the tier-scoped model allow-list +
+budget, then mints a virtual key (`/admin/keys`). It prints the new `team_id`
 and the virtual key — **deliver the key to the org over a secure channel; it is
-shown once.**
+shown once.** (With `--backend litellm` it uses `/team/new` + `/key/generate`.)
+Façade-minted keys are enforced once `GATEWAY_CONTROL_PLANE=true` on the façade.
 
 ## 3. Map identity (Okta → team)
 

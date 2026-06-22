@@ -25,9 +25,13 @@ SECRETS=(
   "cloudflare_tunnel_token_gateway|Cloudflare tunnel token — lab-gateway (Phase 4)"
   "litellm_master_key|LiteLLM master key (invent one, e.g. sk-$(openssl rand -hex 16))"
   "litellm_salt_key|LiteLLM salt key (invent one; do NOT change after first use)"
-  "litellm_virtual_key_webui|LiteLLM virtual key for Open WebUI (issued in LiteLLM UI, Phase 2)"
+  "litellm_virtual_key_webui|LiteLLM virtual key (legacy / optional — Open WebUI now uses the bootstrap key)"
   "webui_secret|Open WebUI secret key (invent one, e.g. openssl rand -hex 32)"
   "postgres_password|Postgres password for LiteLLM backing store (invent one)"
+  # --- AI Gateway façade control plane (gateway/, docs/own-gateway.md) ---
+  "gateway_master_key|Façade ADMIN key — REQUIRED for /admin (invent one, e.g. sk-$(openssl rand -hex 16))"
+  "gateway_bootstrap_key|Façade FIRST-BOOT key — Open WebUI + devs use it; REQUIRED (invent one, e.g. sk-$(openssl rand -hex 16))"
+  "gateway_upstream_key|Façade UPSTREAM key — OPTIONAL; blank = use LiteLLM master key (or paste a LiteLLM virtual key)"
 )
 
 echo "Seeding non-Okta lab/* secrets in region ${REGION}."
