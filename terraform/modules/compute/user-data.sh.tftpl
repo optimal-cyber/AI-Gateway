@@ -79,6 +79,19 @@ Environment="HTTP_PROXY=$${PROXY}"
 Environment="HTTPS_PROXY=$${PROXY}"
 Environment="NO_PROXY=$${NO_PROXY_LIST}"
 EOF
+
+# BuildKit proxy: `docker compose --build` runs RUN steps (pip install) in build
+# containers that need the proxy too. The daemon proxy above only covers pulls;
+# this config injects the proxy into every build. (Base-image manifest fetch is
+# covered by the stack unit's EnvironmentFile=/etc/environment.)
+install -d -m 0700 /root/.docker
+cat > /root/.docker/config.json <<EOF
+{ "proxies": { "default": {
+"httpProxy": "$${PROXY}",
+"httpsProxy": "$${PROXY}",
+"noProxy": "$${NO_PROXY_LIST}"
+} } }
+EOF
 %{ endif ~}
 systemctl daemon-reload
 systemctl enable --now docker

@@ -10,6 +10,12 @@ Requires=docker.service ai-lab-secrets@%i.service
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/opt/ai-lab/repo/docker/%i-host
+# The compose BUILD (buildx) is a separate client from dockerd; it needs the
+# Squid proxy in ITS env to pull base-image manifests, or it dials docker.io
+# directly and the app SG drops it. The daemon proxy (docker.service.d) only
+# covers `docker pull`, not `compose --build`. Load the host proxy env here.
+# `-` = tolerant if absent (e.g. networkfirewall egress mode).
+EnvironmentFile=-/etc/environment
 ExecStart=/usr/bin/docker compose up -d --build
 ExecStop=/usr/bin/docker compose down
 TimeoutStartSec=600
