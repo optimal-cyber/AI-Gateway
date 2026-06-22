@@ -99,6 +99,17 @@ def test_streaming_caller_usage_passes_through_and_meters(make_client):
     assert round(app.state.store.get_team(t["id"])["spend"], 4) == 0.09
 
 
+def test_bootstrap_key_seeds_usable_key(make_client):
+    c, app = make_client(control_plane=True, master_key=M, upstream_key="sk-upstream",
+                         bootstrap_key="sk-boot")
+    # the bootstrap key works immediately — no manual minting needed
+    r = _post(c, "sk-boot")
+    assert r.status_code == 200
+    # a default team + the key now exist in the store
+    assert any(t["alias"] == "lab" for t in app.state.store.list_teams())
+    assert app.state.store.get_key_by_plaintext("sk-boot") is not None
+
+
 def test_control_plane_off_does_not_meter(make_client):
     # Phase-1 behavior preserved: no store enforcement, caller key forwarded.
     c, app = make_client(control_plane=False)

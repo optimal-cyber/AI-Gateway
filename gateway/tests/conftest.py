@@ -78,11 +78,11 @@ class FakeAuditor:
 
 
 def build(enforce=False, require_key=True, blocked=False,
-          control_plane=False, master_key="", upstream_key=""):
+          control_plane=False, master_key="", upstream_key="", bootstrap_key=""):
     settings = Settings(guardrail_enforce=enforce, require_key=require_key,
                         audit_log="/tmp/gateway-test.log", control_plane=control_plane,
                         master_key=master_key, upstream_key=upstream_key,
-                        db_path=":memory:")
+                        bootstrap_key=bootstrap_key, db_path=":memory:")
     app = create_app(settings)
     captured = []
     mock_client = httpx.AsyncClient(

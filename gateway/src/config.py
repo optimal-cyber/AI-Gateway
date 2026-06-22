@@ -72,6 +72,12 @@ class Settings:
     # control_plane ON and this set, the caller's gateway key is validated locally
     # and swapped for this on the upstream hop. Empty -> forward caller key as-is.
     upstream_key: str = os.environ.get("GATEWAY_UPSTREAM_KEY", "")
+    # Bootstrap (turnkey control-plane): on startup, if control_plane is ON and a
+    # bootstrap key is set, idempotently seed a default team + that exact key so
+    # Open WebUI / first callers work immediately without manual minting. Admins
+    # mint scoped keys afterward via /admin/ui. Empty -> no bootstrap.
+    bootstrap_key: str = os.environ.get("GATEWAY_BOOTSTRAP_KEY", "")
+    bootstrap_team: str = os.environ.get("GATEWAY_BOOTSTRAP_TEAM", "lab")
 
 
 def load() -> "Settings":

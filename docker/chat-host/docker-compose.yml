@@ -29,10 +29,13 @@ services:
       # the request to the email (audit-trail story, sso-role-mapping.md).
       ENABLE_FORWARD_USER_INFO_HEADERS: "true"
       WEBUI_SECRET_KEY: "${WEBUI_SECRET_KEY}"
-      # Talk to the LiteLLM gateway on EC2 #2 using a LiteLLM virtual key
-      # (NOT a provider key — the provider keys never leave the gateway host).
-      OPENAI_API_BASE_URL: "http://${LITELLM_HOST_IP}:4000/v1"
-      OPENAI_API_KEY: "${LITELLM_VIRTUAL_KEY_WEBUI}"
+      # Talk to the gateway FAÇADE on EC2 #2 (:4001), the OpenAI-compatible front
+      # door, using the façade bootstrap virtual key (NOT a provider key — provider
+      # keys never leave the gateway host). The façade validates this key against
+      # its control-plane store, then forwards to LiteLLM. (Pre-façade this pointed
+      # at litellm:4000 with LITELLM_VIRTUAL_KEY_WEBUI; see docs/own-gateway.md.)
+      OPENAI_API_BASE_URL: "http://${LITELLM_HOST_IP}:4001/v1"
+      OPENAI_API_KEY: "${GATEWAY_BOOTSTRAP_KEY}"
       # Open WebUI's only outbound is to LiteLLM intra-VPC. Empty proxy env is
       # honest. The trap to dodge: Open WebUI's HTTP client is aiohttp, and
       # aiohttp's `trust_env=True` reads HTTP_PROXY but does NOT honor

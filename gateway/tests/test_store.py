@@ -33,3 +33,11 @@ def test_two_keys_get_distinct_secrets(store):
     a = store.create_key(alias="a")
     b = store.create_key(alias="b")
     assert a["key"] != b["key"]
+
+
+def test_create_key_with_plaintext_is_idempotent(store):
+    a = store.create_key_with_plaintext("sk-fixed", alias="x")
+    b = store.create_key_with_plaintext("sk-fixed", alias="y")
+    assert a["id"] == b["id"]                 # same key, not a duplicate
+    assert len(store.list_keys()) == 1
+    assert store.get_key_by_plaintext("sk-fixed")["id"] == a["id"]

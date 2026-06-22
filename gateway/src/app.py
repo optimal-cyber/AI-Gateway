@@ -48,6 +48,10 @@ async def lifespan(app: FastAPI):
     # enabled (so keys can be provisioned before flipping control_plane on).
     if getattr(app.state, "store", None) is None and (s.control_plane or s.master_key):
         app.state.store = Store(s.db_path)
+    # Turnkey control plane: seed a default team + working key on first boot.
+    if s.control_plane and s.bootstrap_key and getattr(app.state, "store", None):
+        control_mod.bootstrap(app.state.store, team_alias=s.bootstrap_team,
+                              plaintext_key=s.bootstrap_key)
     try:
         yield
     finally:

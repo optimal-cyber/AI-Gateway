@@ -154,7 +154,11 @@ resource "cloudflare_zero_trust_tunnel_cloudflared_config" "lab_gateway" {
   tunnel_id  = cloudflare_zero_trust_tunnel_cloudflared.lab_gateway.id
   config = {
     ingress = [
-      { hostname = "gateway.optimallabs.io", service = "http://litellm:4000" },
+      # Front door is the gateway façade (gateway/): it serves the
+      # OpenAI-compatible /v1 endpoint AND the branded control plane at /admin/ui.
+      # LiteLLM (litellm:4000) stays internal behind it. To also expose LiteLLM's
+      # own /ui for debugging, add a separate hostname -> http://litellm:4000.
+      { hostname = "gateway.optimallabs.io", service = "http://gateway-facade:4001" },
       { service = "http_status:404" },
     ]
   }

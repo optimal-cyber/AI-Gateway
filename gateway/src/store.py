@@ -121,7 +121,27 @@ class Store:
                    models: Optional[List[str]] = None,
                    max_budget: Optional[float] = None,
                    expires_at: Optional[str] = None) -> Dict[str, Any]:
-        plaintext = "sk-" + secrets.token_urlsafe(32)
+        return self._insert_key("sk-" + secrets.token_urlsafe(32), team_id=team_id,
+                                alias=alias, models=models, max_budget=max_budget,
+                                expires_at=expires_at)
+
+    def create_key_with_plaintext(self, plaintext: str, *, team_id: Optional[str] = None,
+                                  alias: Optional[str] = None,
+                                  models: Optional[List[str]] = None,
+                                  max_budget: Optional[float] = None,
+                                  expires_at: Optional[str] = None) -> Dict[str, Any]:
+        """Idempotently store a key with a KNOWN plaintext (bootstrap path). If a
+        key with this hash already exists, return it unchanged (re-running boot is
+        safe). The plaintext is the caller's to keep — we still only store its hash."""
+        existing = self.get_key_by_plaintext(plaintext)
+        if existing is not None:
+            existing["key"] = plaintext
+            return existing
+        return self._insert_key(plaintext, team_id=team_id, alias=alias,
+                                models=models, max_budget=max_budget, expires_at=expires_at)
+
+    def _insert_key(self, plaintext: str, *, team_id, alias, models,
+                    max_budget, expires_at) -> Dict[str, Any]:
         kid = "key_" + secrets.token_hex(8)
         with self._lock:
             self._db.execute(

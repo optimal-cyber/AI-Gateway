@@ -44,13 +44,23 @@ secret() {
     --secret-id "lab/$1" \
     --query SecretString --output text
 }
+# like secret(), but tolerate an unseeded/empty secret (prints empty, no abort).
+# Used for OPTIONAL secrets so a missing one never crashes the whole stack.
+secret_opt() {
+  aws secretsmanager get-secret-value \
+    --region "${AWS_DEFAULT_REGION}" \
+    --secret-id "lab/$1" \
+    --query SecretString --output text 2>/dev/null || true
+}
 # write KEY=VALUE to the env file
 put() { printf '%s=%s\n' "$1" "$2" >> "${ENV_FILE}"; }
 
 case "${AI_LAB_ROLE}" in
   chat)
     put LITELLM_HOST_IP             "$(secret gateway_host_private_ip)"
-    put LITELLM_VIRTUAL_KEY_WEBUI   "$(secret litellm_virtual_key_webui)"
+    put LITELLM_VIRTUAL_KEY_WEBUI   "$(secret_opt litellm_virtual_key_webui)"
+    # Open WebUI now calls the façade (:4001) using the façade bootstrap key.
+    put GATEWAY_BOOTSTRAP_KEY       "$(secret_opt gateway_bootstrap_key)"
     put WEBUI_SECRET_KEY            "$(secret webui_secret)"
     put CLOUDFLARE_TUNNEL_TOKEN     "$(secret cloudflare_tunnel_token_chat)"
     ;;
@@ -64,6 +74,13 @@ case "${AI_LAB_ROLE}" in
     put POSTGRES_PASSWORD           "${PG_PW}"
     put DATABASE_URL                "postgresql://litellm:${PG_PW}@postgres:5432/litellm"
     put CLOUDFLARE_TUNNEL_TOKEN     "$(secret cloudflare_tunnel_token_gateway)"
+    # AI Gateway façade control plane (gateway/, docs/own-gateway.md). All three
+    # are OPTIONAL at bootstrap so a missing one never aborts the stack; but the
+    # façade front door needs master + bootstrap seeded to authenticate callers.
+    # upstream_key is blank-by-default — compose falls back to LITELLM_MASTER_KEY.
+    put GATEWAY_MASTER_KEY          "$(secret_opt gateway_master_key)"
+    put GATEWAY_UPSTREAM_KEY        "$(secret_opt gateway_upstream_key)"
+    put GATEWAY_BOOTSTRAP_KEY       "$(secret_opt gateway_bootstrap_key)"
     # Okta (LiteLLM admin OIDC, direct — ADR-007)
     # OKTA_URL is a shell-only intermediate used to build the GENERIC_* URLs.
     # Do NOT put OKTA_TENANT_URL into the env — in LiteLLM >= 1.86 it triggers

@@ -41,6 +41,18 @@ def _expired(expires_at: Optional[str]) -> bool:
         return False  # unparseable expiry -> treat as no expiry (don't lock out)
 
 
+def bootstrap(store: Store, *, team_alias: str, plaintext_key: str) -> Dict[str, Any]:
+    """Idempotently seed a default team + a key with a known plaintext, so a
+    control-plane-on deployment is usable on first boot. Safe to run every start.
+    The team has no model allow-list (all configured models permitted) and no
+    budget cap; operators mint scoped/budgeted keys afterward via the admin API."""
+    teams = [t for t in store.list_teams() if t["alias"] == team_alias]
+    team = teams[0] if teams else store.create_team(alias=team_alias, tier="dev")
+    store.create_key_with_plaintext(plaintext_key, team_id=team["id"],
+                                    alias=f"{team_alias}-bootstrap")
+    return team
+
+
 def authorize(store: Store, plaintext_key: str, model: Optional[str],
               enforce_budget: bool = True) -> Dict[str, Any]:
     """Return {'key':..., 'team':...} or raise Denied.

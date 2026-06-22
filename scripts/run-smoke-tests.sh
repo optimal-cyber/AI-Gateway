@@ -8,9 +8,11 @@
 # when a precondition is missing, so it is safe to run at any phase.
 #
 # Mapped to docs/test-plan.md: T-EG-1..4 (egress) + container healthchecks +
-# T-GW-1..5 (the AI API gateway endpoint: frontier models, pre-call guardrail
+# T-FA-1..3 (the gateway façade front door: /health, auth gate, admin API gate)
+# + T-GW-1..5 (the AI API gateway endpoint: frontier models, pre-call guardrail
 # block, a government-resource lookup through /v1, and a registered gov-tier
-# model — the gateway's real face). No identity-plane checks — see test-sso.sh.
+# model — the gateway's real face). Tests target the façade :4001 by default.
+# No identity-plane checks — see test-sso.sh.
 # =============================================================================
 set -uo pipefail
 
@@ -121,20 +123,66 @@ if [[ -n "${ROLE}" ]] && command -v docker >/dev/null; then
       else
         no "postgres pg_isready failed"
       fi
+      if docker compose exec -T gateway-facade python -m src.app --health >/dev/null 2>&1; then
+        ok "gateway-facade --health ok"
+      else
+        no "gateway-facade healthcheck failed"
+      fi
     fi
   fi
 fi
 
 # --- gateway endpoint proof (gateway-host only) ------------------------------
-# The OpenAI-compatible endpoint IS the gateway. One virtual key reaches every
-# frontier model AND the government-resource (MCP) tools; an injection prompt is
-# blocked pre-call. Provide a key:  export LITELLM_KEY=sk-...   (a virtual key or
-# the master key). Override the URL with GATEWAY_URL if not on localhost:4000.
+# The OpenAI-compatible endpoint IS the gateway. By default we test the FAÇADE
+# on :4001 (the front door). One virtual key reaches every frontier model AND the
+# government-resource (MCP) tools; an injection prompt is blocked pre-call.
+#
+# KEY: with the façade control plane ON, callers must present a FAÇADE key (the
+# bootstrap key or one minted via /admin/ui) — NOT the LiteLLM master key. The
+# script auto-reads GATEWAY_BOOTSTRAP_KEY/GATEWAY_MASTER_KEY from the compose
+# .env when run on gateway-host; override with `export LITELLM_KEY=sk-...`.
+# Override the URL with GATEWAY_URL (e.g. http://127.0.0.1:4000 to test LiteLLM directly).
 echo
 echo "[gateway] OpenAI-compatible endpoint proof"
-GW_URL="${GATEWAY_URL:-http://127.0.0.1:4000}"
-GW_KEY="${LITELLM_KEY:-${LITELLM_MASTER_KEY:-}}"
+GW_URL="${GATEWAY_URL:-http://127.0.0.1:4001}"
+# Best-effort: load the façade keys from the tmpfs compose .env (we're in the dir).
+if [[ "${ROLE}" == "gateway" && -f .env ]]; then
+  : "${GATEWAY_BOOTSTRAP_KEY:=$(grep -E '^GATEWAY_BOOTSTRAP_KEY=' .env | head -1 | cut -d= -f2-)}"
+  : "${GATEWAY_MASTER_KEY:=$(grep -E '^GATEWAY_MASTER_KEY=' .env | head -1 | cut -d= -f2-)}"
+fi
+GW_KEY="${LITELLM_KEY:-${GATEWAY_BOOTSTRAP_KEY:-${LITELLM_MASTER_KEY:-}}}"
 GW_MODELS=("gpt-4o" "claude-opus-4-8")   # representative frontier models; same key reaches all
+
+# --- façade front-door checks (T-FA-1..3) ------------------------------------
+if [[ "${ROLE}" == "gateway" ]] && command -v curl >/dev/null; then
+  code=$(curl -sS --max-time 8 -o /tmp/_fa_h -w '%{http_code}' "${GW_URL}/health" 2>/dev/null || echo 000)
+  if [[ "${code}" == "200" ]] && grep -qi '"status"' /tmp/_fa_h 2>/dev/null; then
+    ok "[T-FA-1] façade /health 200 (${GW_URL})"
+  else
+    no "[T-FA-1] façade /health expected 200, got ${code} — is gateway-facade up on :4001?"
+  fi
+  code=$(curl -sS --max-time 8 -o /dev/null -w '%{http_code}' -X POST "${GW_URL}/v1/chat/completions" \
+    -H 'Content-Type: application/json' -d '{"model":"gpt-4o","messages":[]}' 2>/dev/null || echo 000)
+  if [[ "${code}" == "401" ]]; then
+    ok "[T-FA-2] auth gate rejects a missing key (HTTP 401)"
+  else
+    no "[T-FA-2] missing-key expected 401, got ${code} (require_key off?)"
+  fi
+  noauth=$(curl -sS --max-time 8 -o /dev/null -w '%{http_code}' "${GW_URL}/admin/teams" 2>/dev/null || echo 000)
+  if [[ -n "${GATEWAY_MASTER_KEY:-}" ]]; then
+    withauth=$(curl -sS --max-time 8 -o /dev/null -w '%{http_code}' \
+      -H "Authorization: Bearer ${GATEWAY_MASTER_KEY}" "${GW_URL}/admin/teams" 2>/dev/null || echo 000)
+    if [[ "${noauth}" == "401" && "${withauth}" == "200" ]]; then
+      ok "[T-FA-3] admin API gated by master key (no-auth 401, master 200)"
+    else
+      no "[T-FA-3] admin gate: no-auth=${noauth} master=${withauth} (expect 401/200)"
+    fi
+  elif [[ "${noauth}" == "401" ]]; then
+    ok "[T-FA-3] admin API rejects no-auth (401; set GATEWAY_MASTER_KEY to test the allow path)"
+  else
+    no "[T-FA-3] admin no-auth expected 401, got ${noauth}"
+  fi
+fi
 if [[ "${ROLE}" != "gateway" ]]; then
   sk "endpoint tests run on gateway-host only (T-GW-1..4)"
 elif ! command -v curl >/dev/null; then

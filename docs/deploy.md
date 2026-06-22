@@ -16,9 +16,16 @@ config-redeploy + live demo walkthrough is in [`demo-live.md`](demo-live.md).
 
 ## Build vs. mounted — what a change requires
 
+> **Front door = the façade.** The gateway-host runs the `gateway-facade`
+> (port 4001) in front of LiteLLM (4000). It is the OpenAI-compatible `/v1`
+> endpoint and the control plane (`/admin/ui`); the Cloudflare tunnel and Open
+> WebUI point at `:4001`. Control plane is **on** (it owns virtual keys/budgets);
+> see [`own-gateway.md`](own-gateway.md) and [`operate.md`](operate.md).
+
 | Service | Source | A change needs |
 |---|---|---|
-| `litellm` | image + **mounted** `litellm-config.yaml` | recreate: `docker compose up -d --force-recreate litellm` |
+| `gateway-facade` | **built** from `../../gateway` | rebuild: `docker compose up -d --build gateway-facade` |
+| `litellm` | image (pinned by digest) + **mounted** `litellm-config.yaml` | recreate: `docker compose up -d --force-recreate litellm` |
 | `compliance-mcp` | **built** from `../../mcp-server` | rebuild: `docker compose up -d --build compliance-mcp` |
 | `nemo-guardrails` | **built** from `./nemo` | rebuild: `docker compose up -d --build nemo-guardrails` |
 | Squid egress allowlist | Terraform `egress_allowlist_domains` → proxy user-data → `/etc/squid/allowlist.txt` | `terraform apply` (may replace the proxy), or hot-reload on the proxy: append to `/etc/squid/allowlist.txt` + `squid -k reconfigure` |
@@ -29,9 +36,10 @@ config-redeploy + live demo walkthrough is in [`demo-live.md`](demo-live.md).
 # SSM into the host (no SSH — ADR-006):
 sudo git -C /opt/ai-lab/repo pull
 cd /opt/ai-lab/repo/docker/gateway-host
+sudo docker compose up -d --build gateway-facade        # if façade code changed
 sudo docker compose up -d --build compliance-mcp        # if MCP code changed
 sudo docker compose up -d --force-recreate litellm      # if litellm-config changed
-cd /opt/ai-lab/repo && ./scripts/run-smoke-tests.sh     # verify
+cd /opt/ai-lab/repo && ./scripts/run-smoke-tests.sh     # verify (targets :4001)
 ```
 
 See [`demo-live.md`](demo-live.md) for the full redeploy-then-demo walkthrough.
