@@ -105,65 +105,36 @@ model_list:
   # guessed provider string. Until confirmed, Amazon Bedrock in GovCloud is the
   # working gov Claude path (partner-operated; feature subset — no Anthropic
   # server-side tools / Managed Agents):
-  - model_name: gov/claude-opus-4-8
-    litellm_params:
-      # Verify the exact Bedrock model ID / cross-region inference profile for
-      # your GovCloud region against the Bedrock console before enabling.
-      model: bedrock/anthropic.claude-opus-4-8
-      aws_region_name: us-gov-west-1
-      # Creds resolve from a GovCloud IAM role/profile to be provisioned — no
-      # static keys in this lab (ADR-006). LiteLLM reads them from the instance
-      # role or AWS_* in the tmpfs .env.
-    model_info:
-      tier: gov
-      boundary: "AWS GovCloud (Bedrock)"
-      cloud: aws
-      region: us-gov-west-1
-      fedramp: high
-      residency: us
-      retention: none
-      il: "IL4/IL5-eligible"
-
-  # Second deployment of the SAME logical model (gov/claude-opus-4-8) on a second
-  # cloud → cross-cloud failover group. LiteLLM load-balances / retries across
-  # same-named deployments (see router_settings below). ADR-015 / roadmap G2.
-  - model_name: gov/claude-opus-4-8
-    litellm_params:
-      # Verify the exact Vertex Claude model ID/version for your Assured Workloads
-      # project against the Vertex Model Garden before enabling.
-      model: vertex_ai/claude-opus-4-8
-      vertex_project: os.environ/VERTEX_GOV_PROJECT
-      vertex_location: us-central1
-      # Creds = a GCP service account (GOOGLE_APPLICATION_CREDENTIALS) to be
-      # provisioned; none in this lab.
-    model_info:
-      tier: gov
-      boundary: "GCP Vertex AI (Assured Workloads)"
-      cloud: gcp
-      region: us-central1
-      fedramp: high
-      residency: us
-      retention: none
-      il: "IL4-eligible"
-
-  # A second gov boundary for the OpenAI family — Azure Government. ADR-015 / G2.
-  - model_name: gov/gpt-4o
-    litellm_params:
-      # Azure OpenAI *deployment* name in an Azure Government resource. Verify the
-      # deployment name + api_version for your Azure Gov resource.
-      model: azure/gpt-4o-gov
-      api_base: os.environ/AZURE_GOV_OPENAI_ENDPOINT # https://<resource>.openai.azure.us/
-      api_key: os.environ/AZURE_GOV_OPENAI_API_KEY
-      api_version: "2024-10-21"
-    model_info:
-      tier: gov
-      boundary: "Azure Government (Azure OpenAI)"
-      cloud: azure
-      region: usgovvirginia
-      fedramp: high
-      residency: us
-      retention: none
-      il: "IL4/IL5-eligible"
+  # --- gov-tier deployments: DISABLED until cloud creds are provisioned -------
+  # IMPORTANT: these entries referenced env vars that don't exist in this deploy
+  # (VERTEX_GOV_PROJECT, AZURE_GOV_OPENAI_ENDPOINT/_API_KEY). An unresolvable
+  # `os.environ/…` ref makes LiteLLM drop the ENTIRE model_list at startup
+  # (symptom: /v1/models empty, "no healthy deployments" for every model). They
+  # are "config-ready, not live" (ADR-014/015), so they stay commented until the
+  # boundary's creds + Squid egress are provisioned. To enable one: uncomment its
+  # block, seed its creds (Secrets Manager + secrets-bootstrap), add the env vars,
+  # and add the provider endpoint to the Squid allowlist. See docs/operate.md §6.
+  #
+  #  - model_name: gov/claude-opus-4-8        # AWS GovCloud (Bedrock)
+  #    litellm_params:
+  #      model: bedrock/anthropic.claude-opus-4-8
+  #      aws_region_name: us-gov-west-1
+  #    model_info: { tier: gov, boundary: "AWS GovCloud (Bedrock)", fedramp: high, il: "IL4/IL5-eligible" }
+  #
+  #  - model_name: gov/claude-opus-4-8        # GCP Vertex (Assured Workloads) — cross-cloud failover
+  #    litellm_params:
+  #      model: vertex_ai/claude-opus-4-8
+  #      vertex_project: os.environ/VERTEX_GOV_PROJECT     # set this env to enable
+  #      vertex_location: us-central1
+  #    model_info: { tier: gov, boundary: "GCP Vertex AI (Assured Workloads)", fedramp: high, il: "IL4-eligible" }
+  #
+  #  - model_name: gov/gpt-4o                  # Azure Government (Azure OpenAI)
+  #    litellm_params:
+  #      model: azure/gpt-4o-gov
+  #      api_base: os.environ/AZURE_GOV_OPENAI_ENDPOINT     # set this env to enable
+  #      api_key: os.environ/AZURE_GOV_OPENAI_API_KEY       # set this env to enable
+  #      api_version: "2024-10-21"
+  #    model_info: { tier: gov, boundary: "Azure Government (Azure OpenAI)", fedramp: high, il: "IL4/IL5-eligible" }
 
 # --- Guardrails: NeMo as a DaaS hook on input (pre) and output (post) --------
 # Both point at the same custom class (../nemo_guardrail.py, mounted + on
@@ -194,18 +165,22 @@ mcp_servers:
 # --- general settings --------------------------------------------------------
 general_settings:
   master_key: os.environ/LITELLM_MASTER_KEY
-  store_model_in_db: true
+  # Config-driven models: serve the model_list above directly. (Was `true`, which
+  # makes the DB the source of truth for MODELS — on a fresh DB the router stays
+  # empty: /v1/models returns [] and every call 400s with "no healthy
+  # deployments". Virtual keys/teams/budgets still persist in the DB regardless
+  # of this flag; the façade owns the customer-facing control plane either way.)
+  store_model_in_db: false
   # Lock the admin UI to admins. Network reachability is already gated by
   # Cloudflare Access (lab-admins + MFA + WARP + US); the Okta LiteLLM app is
   # assigned to lab-admins ONLY, so non-admins cannot complete the OIDC login.
   ui_access_mode: "admin_only"
   # --- per-tenant budget alerting (ADR-018 / G4) ---------------------------
-  # Spend/budget alerts — including the per-team soft_budget thresholds set by
-  # scripts/provision-org.sh — fire through this channel. CONFIG-READY: set
-  # SLACK_WEBHOOK_URL in the env to activate. Verify keys against your LiteLLM
-  # version.
-  alerting: ["slack"]
-  alerting_threshold: 300 # also alerts on requests slower than 300s
+  # DISABLED until a webhook exists: `alerting: ["slack"]` with no SLACK_WEBHOOK_URL
+  # raises ValueError on every alert (noisy tracebacks in the logs). Re-enable by
+  # setting SLACK_WEBHOOK_URL in the env and uncommenting the two lines below.
+  # alerting: ["slack"]
+  # alerting_threshold: 300 # also alerts on requests slower than 300s
 
 litellm_settings:
   drop_params: true
