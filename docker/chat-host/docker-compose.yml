@@ -14,6 +14,14 @@ services:
   chat:
     build:
       context: ../../chat-ui
+      args:
+        # pip in the isolated BuildKit env needs the Squid proxy to reach pypi —
+        # without it the build times out (ADR-009 default-deny egress). These are
+        # Docker's predefined proxy build-args (auto-applied to RUN, not persisted
+        # in the image); sourced from the tmpfs .env, which carries the host proxy.
+        HTTP_PROXY: "${HTTP_PROXY:-}"
+        HTTPS_PROXY: "${HTTPS_PROXY:-}"
+        NO_PROXY: "${NO_PROXY:-}"
     restart: unless-stopped
     # ---------------------------------------------------------------------
     # LOAD-BEARING SECURITY BOUNDARY (ADR-007 / threat T-CHAT-S):
