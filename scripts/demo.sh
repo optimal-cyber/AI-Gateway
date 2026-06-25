@@ -140,6 +140,8 @@ forward(){ # $1=model $2=cloud-label
     ok "$(printf '%-17s' "$1") ${DIM}→ ${2}${R}  ${GRN}200${R} ${DIM}$(secs "$t")s  “${reply}”${R}"
   elif [[ "$code" == "401" ]] && grep -qiE 'AuthenticationError|Incorrect API key|invalid_api_key' "$BODY" 2>/dev/null; then
     warn "$(printf '%-17s' "$1") ${DIM}→ ${2}  registered · provider credential refresh pending${R}"
+  elif [[ "$code" == "429" ]] || grep -qiE 'RateLimitError|current quota|insufficient_quota' "$BODY" 2>/dev/null; then
+    warn "$(printf '%-17s' "$1") ${DIM}→ ${2}  registered · provider account billing/quota pending${R}"
   else
     deny "$(printf '%-17s' "$1") → ${2}  HTTP ${code}"
   fi; }
