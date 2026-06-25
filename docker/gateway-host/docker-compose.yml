@@ -56,6 +56,10 @@ services:
       DATABASE_URL: "${DATABASE_URL}"
       OPENAI_API_KEY: "${OPENAI_API_KEY}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY}"
+      # Google Gemini (AI Studio). Default empty so os.environ/GEMINI_API_KEY
+      # resolves even before the key is seeded — an UNSET var crashes the whole
+      # model_list at load; an empty one just makes Gemini calls fail until seeded.
+      GEMINI_API_KEY: "${GEMINI_API_KEY:-}"
       # NeMo DaaS endpoint for the custom guardrail (../nemo_guardrail.py)
       NEMO_GUARDRAIL_URL: "http://nemo-guardrails:8000"
       # so `guardrail: nemo_guardrail.NemoDaaSGuardrail` is importable

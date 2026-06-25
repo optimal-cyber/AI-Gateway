@@ -20,6 +20,7 @@ REGION="${AWS_DEFAULT_REGION:-us-east-1}"
 SECRETS=(
   "openai_api_key|OpenAI API key (sk-...)"
   "anthropic_api_key|Anthropic API key (sk-ant-...)"
+  "gemini_api_key|Google Gemini API key (AI Studio; optional)"
   "cloudflare_tunnel_token_chat|Cloudflare tunnel token — lab-chat (Phase 4)"
   "cloudflare_tunnel_token_gateway|Cloudflare tunnel token — lab-gateway (Phase 4)"
   "litellm_master_key|LiteLLM master key (invent one, e.g. sk-$(openssl rand -hex 16))"

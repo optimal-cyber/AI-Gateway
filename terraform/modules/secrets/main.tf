@@ -16,6 +16,7 @@ locals {
   secret_names = toset([
     "openai_api_key",
     "anthropic_api_key",
+    "gemini_api_key",
     "cloudflare_tunnel_token_chat",
     "cloudflare_tunnel_token_gateway",
     "litellm_master_key",

@@ -67,6 +67,9 @@ case "${AI_LAB_ROLE}" in
   gateway)
     put OPENAI_API_KEY              "$(secret openai_api_key)"
     put ANTHROPIC_API_KEY           "$(secret anthropic_api_key)"
+    # Gemini (Google AI Studio) — OPTIONAL: unseeded -> Gemini models register but
+    # calls fail until lab/gemini_api_key is set (tolerant so it never aborts).
+    put GEMINI_API_KEY              "$(secret_opt gemini_api_key)"
     put LITELLM_MASTER_KEY          "$(secret litellm_master_key)"
     put LITELLM_SALT_KEY            "$(secret litellm_salt_key)"
     PG_PW="$(secret postgres_password)"

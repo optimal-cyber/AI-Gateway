@@ -40,6 +40,20 @@ model_list:
       retention: provider-default
       il: n/a
 
+  - model_name: gpt-4o-mini               # fast / low-cost OpenAI
+    litellm_params:
+      model: openai/gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+    model_info:
+      access_tier: dev
+      boundary: "commercial (OpenAI-direct)"
+      cloud: openai
+      region: us
+      fedramp: none
+      residency: us
+      retention: provider-default
+      il: n/a
+
   - model_name: claude-fable-5            # most capable
     litellm_params:
       model: anthropic/claude-fable-5
@@ -90,6 +104,35 @@ model_list:
       access_tier: dev
       boundary: "commercial (Anthropic-direct)"
       cloud: anthropic
+      region: us
+      fedramp: none
+      residency: us
+      retention: provider-default
+      il: n/a
+
+  # --- Google Gemini (commercial, Google AI Studio) --------------------------
+  - model_name: gemini-2.5-pro            # Google flagship
+    litellm_params:
+      model: gemini/gemini-2.5-pro
+      api_key: os.environ/GEMINI_API_KEY
+    model_info:
+      access_tier: dev
+      boundary: "commercial (Google AI Studio)"
+      cloud: google
+      region: us
+      fedramp: none
+      residency: us
+      retention: provider-default
+      il: n/a
+
+  - model_name: gemini-2.5-flash          # fast / low-cost Google
+    litellm_params:
+      model: gemini/gemini-2.5-flash
+      api_key: os.environ/GEMINI_API_KEY
+    model_info:
+      access_tier: dev
+      boundary: "commercial (Google AI Studio)"
+      cloud: google
       region: us
       fedramp: none
       residency: us

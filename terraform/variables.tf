@@ -123,6 +123,7 @@ variable "egress_allowlist_domains" {
     # --- LLM providers ---
     ".openai.com",    # api.openai.com
     ".anthropic.com", # api.anthropic.com
+    "generativelanguage.googleapis.com", # Google Gemini (AI Studio)
     # --- government-ready model boundaries (ADR-014/015; gov tier, config-ready) ---
     # Scoped to the exact gov endpoint/host-family (not a broad .amazonaws.com /
     # .googleapis.com / .azure.us) to preserve default-deny. Inert until each gov
