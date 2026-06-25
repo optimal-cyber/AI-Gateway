@@ -40,7 +40,14 @@ data "aws_ssm_parameter" "al2023_x86_64" {
 }
 
 locals {
-  al2023_ami_id = data.aws_ssm_parameter.al2023_x86_64.value
+  # PIN the AMI (same reproducibility rule we apply to the LiteLLM image digest):
+  # the "latest" SSM parameter above rolls forward on every AL2023 release, and an
+  # unpinned ami forces a destroy/recreate of the ENTIRE running fleet on the next
+  # `terraform apply` (Plan: N to destroy) — silently wiping hosts + Postgres data.
+  # var.app_ami_id pins the value the fleet was built on; set it to "" only for a
+  # fresh build (tracks latest), then pin back to the resolved id. Re-pin
+  # deliberately to patch the OS.
+  al2023_ami_id = var.app_ami_id != "" ? var.app_ami_id : data.aws_ssm_parameter.al2023_x86_64.value
 }
 
 # -----------------------------------------------------------------------------

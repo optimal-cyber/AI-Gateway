@@ -17,17 +17,21 @@ variable "instance_type" {
 
 variable "instance_type_overrides" {
   description = <<-EOT
-    Per-role instance type overrides keyed by host role (\"chat\"|\"gateway\"). The
+    Per-host instance type overrides keyed by host key (\"chat-host\"|\"gateway-host\"),
+    matching the keys of local.hosts and each.key on the instance resource. The
     gateway-host is sized larger because NeMo Guardrails' LLMRails warms up
     langchain + tokenizer footprint at startup (~600-1000 MB resident on top of
     LiteLLM + Postgres + compliance-mcp + cloudflared); t3.small (2 GB) OOM-kills
     SSM agent during recreate cycles. chat-host runs Open WebUI + cloudflared
     only, which fits t3.small comfortably. See ADR-012.
+    NOTE: the key MUST be the full host key ("gateway-host"), not the bare role
+    ("gateway") — lookup() is exact-match, so a "gateway" key silently misses and
+    the host launches at the t3.small default (the original sizing bug).
   EOT
   type        = map(string)
   default = {
-    gateway = "t3.medium"
-    # chat: inherit default (t3.small)
+    "gateway-host" = "t3.medium"
+    # chat-host: inherit default (t3.small)
   }
 }
 

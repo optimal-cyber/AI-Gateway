@@ -67,6 +67,18 @@ variable "egress_mode" {
   }
 }
 
+variable "app_ami_id" {
+  description = <<-EOT
+    Pinned Amazon Linux 2023 x86_64 AMI for the app + proxy hosts. Pinned (not the
+    "latest" SSM parameter) so a new AL2023 release never forces a destroy/recreate
+    of the running fleet on `terraform apply` — the same reproducibility rule as
+    pinning the LiteLLM image by digest. Set to "" to (re)resolve the latest
+    parameter for a fresh build, then pin back to the resolved value.
+  EOT
+  type        = string
+  default     = "ami-0521cb2d60cfbb1a6" # AL2023 x86_64; fleet built 2026-06-22
+}
+
 variable "instance_type" {
   description = "App host instance type (chat-host, gateway-host)."
   type        = string
