@@ -222,7 +222,8 @@ async function refresh() {
         <td><select onchange="setPlan('${t.id}', this.value)">${planOpts(t.plan)}</select></td>
         <td>${u.cost != null ? '$' + u.cost.toFixed(2) + ' · ' + u.requests : '—'}</td>
         <td><code>${t.id}</code></td>
-        <td>${act} <button class=ghost onclick="showInvoice('${t.id}')">invoice</button></td></tr>`;
+        <td>${act} <button class=ghost onclick="showInvoice('${t.id}')">invoice</button>
+            <button class=ghost onclick="issuePortalToken('${t.id}')">portal token</button></td></tr>`;
     }).join('') || empty(8);
     $('ten_sum').textContent = tenants.length ? ` — ${tenants.length} orgs` : ' — none yet';
     loadAudit(); loadRequests(); loadCompliance();
@@ -413,6 +414,13 @@ async function showInvoice(id) {
     const est = inv.estimated_usage > 0 ? ` · incl. $${inv.estimated_usage.toFixed(4)} estimated` : '';
     msg(`Invoice — ${inv.tenant_name} · ${inv.plan.name}: $${inv.total.toFixed(2)} `
         + `(raw usage $${inv.subtotal_usage_raw.toFixed(4)}${est})`, true);
+  } catch (e) { msg('Error: ' + e.message, false); }
+}
+async function issuePortalToken(id) {
+  try {
+    const t = await api('POST', '/tenants/' + id + '/portal-tokens');
+    $('newkey').innerHTML = `<label>Portal token for the customer (shown once) — they sign in at <code>/portal/ui</code></label><code>${esc(t.token)}</code>`;
+    msg('Portal token issued — deliver it to the customer securely.', true);
   } catch (e) { msg('Error: ' + e.message, false); }
 }
 
