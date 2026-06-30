@@ -22,6 +22,13 @@ from pydantic import BaseModel, Field
 from .store import Store
 
 
+class TenantCreate(BaseModel):
+    name: str
+    tier: str = Field(default="dev")
+    plan: Optional[str] = None
+    contact_email: Optional[str] = None
+
+
 class TeamCreate(BaseModel):
     alias: str
     tier: str = Field(default="dev")
@@ -30,6 +37,7 @@ class TeamCreate(BaseModel):
     budget_duration: Optional[str] = None
     models: List[str] = Field(default_factory=list)
     approved_by: Optional[str] = None
+    tenant_id: Optional[str] = None
 
 
 class KeyCreate(BaseModel):
@@ -76,6 +84,64 @@ def _require_admin(request: Request) -> None:
 def build_router() -> APIRouter:
     r = APIRouter(prefix="/admin", tags=["admin"])
 
+    # -- tenants -----------------------------------------------------------
+    # The tenant is the customer isolation boundary; teams/keys/spend/audit hang
+    # off it. Suspending a tenant refuses all its keys at the auth gate (control.py).
+    @r.post("/tenants")
+    async def create_tenant(body: TenantCreate, request: Request):
+        _require_admin(request)
+        return _store(request).create_tenant(
+            name=body.name, tier=body.tier, plan=body.plan,
+            contact_email=body.contact_email)
+
+    @r.get("/tenants")
+    async def list_tenants(request: Request):
+        _require_admin(request)
+        return {"data": _store(request).list_tenants()}
+
+    @r.get("/tenants/{tenant_id}")
+    async def get_tenant(tenant_id: str, request: Request):
+        _require_admin(request)
+        t = _store(request).get_tenant(tenant_id)
+        if not t:
+            raise HTTPException(status_code=404, detail={"error": {
+                "message": "tenant not found", "type": "invalid_request_error"}})
+        return t
+
+    @r.post("/tenants/{tenant_id}/suspend")
+    async def suspend_tenant(tenant_id: str, request: Request):
+        _require_admin(request)
+        if not _store(request).set_tenant_status(tenant_id, "suspended"):
+            raise HTTPException(status_code=404, detail={"error": {
+                "message": "tenant not found", "type": "invalid_request_error"}})
+        return {"id": tenant_id, "status": "suspended"}
+
+    @r.post("/tenants/{tenant_id}/activate")
+    async def activate_tenant(tenant_id: str, request: Request):
+        _require_admin(request)
+        if not _store(request).set_tenant_status(tenant_id, "active"):
+            raise HTTPException(status_code=404, detail={"error": {
+                "message": "tenant not found", "type": "invalid_request_error"}})
+        return {"id": tenant_id, "status": "active"}
+
+    @r.get("/tenants/{tenant_id}/teams")
+    async def tenant_teams(tenant_id: str, request: Request):
+        _require_admin(request)
+        return {"data": _store(request).list_teams(tenant_id=tenant_id)}
+
+    @r.get("/tenants/{tenant_id}/keys")
+    async def tenant_keys(tenant_id: str, request: Request):
+        _require_admin(request)
+        return {"data": _store(request).list_keys(tenant_id=tenant_id)}
+
+    @r.get("/tenants/{tenant_id}/usage")
+    async def tenant_usage(tenant_id: str, request: Request):
+        _require_admin(request)
+        if not _store(request).get_tenant(tenant_id):
+            raise HTTPException(status_code=404, detail={"error": {
+                "message": "tenant not found", "type": "invalid_request_error"}})
+        return _store(request).tenant_usage(tenant_id)
+
     # -- teams -------------------------------------------------------------
     @r.post("/teams")
     async def create_team(body: TeamCreate, request: Request):
@@ -84,10 +150,14 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=400, detail={"error": {
                 "message": "gov-tier team requires approved_by (ADR-018 approval gate).",
                 "type": "invalid_request_error", "code": "approval_required"}})
+        if body.tenant_id and not _store(request).get_tenant(body.tenant_id):
+            raise HTTPException(status_code=400, detail={"error": {
+                "message": f"unknown tenant_id '{body.tenant_id}'",
+                "type": "invalid_request_error"}})
         return _store(request).create_team(
             alias=body.alias, tier=body.tier, max_budget=body.max_budget,
             soft_budget=body.soft_budget, budget_duration=body.budget_duration,
-            models=body.models, approved_by=body.approved_by)
+            models=body.models, approved_by=body.approved_by, tenant_id=body.tenant_id)
 
     @r.get("/teams")
     async def list_teams(request: Request):
@@ -206,18 +276,22 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=400, detail={"error": {
                 "message": "gov-tier approval requires approved_by (ADR-018).",
                 "type": "invalid_request_error", "code": "approval_required"}})
-        # Approving the request IS the provisioning step: stand up the org (team) +
-        # a scoped key in one action. The gov approval gate is satisfied by approved_by.
+        # Approving the request IS the provisioning step: stand up the org as a
+        # first-class TENANT, then a team + a scoped key under it, in one action.
+        # The gov approval gate is satisfied by approved_by.
+        tenant = store.create_tenant(name=req["org"], tier=req["tier"],
+                                     contact_email=req.get("email"))
         team = store.create_team(alias=req["org"], tier=req["tier"],
-                                 max_budget=req["max_budget"],
+                                 max_budget=req["max_budget"], tenant_id=tenant["id"],
                                  approved_by=approver if req["tier"] == "gov" else None)
-        key = store.create_key(team_id=team["id"], alias=f"{req['org']}-key",
+        key = store.create_key(team_id=team["id"], tenant_id=tenant["id"],
+                               alias=f"{req['org']}-key",
                                max_budget=req["max_budget"], rpm_limit=req["rpm_limit"])
         store.mark_request(rid, status="approved", decided_by=approver,
-                           team_id=team["id"], key_id=key["id"])
+                           tenant_id=tenant["id"], team_id=team["id"], key_id=key["id"])
         # The plaintext key is returned ONCE — deliver to the org over a secure channel.
         return {"request_id": rid, "status": "approved", "org": req["org"],
-                "team_id": team["id"], "key": key["key"]}
+                "tenant_id": tenant["id"], "team_id": team["id"], "key": key["key"]}
 
     @r.post("/requests/{rid}/reject")
     async def reject_request(rid: str, body: DecisionBody, request: Request):

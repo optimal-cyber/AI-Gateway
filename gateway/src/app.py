@@ -186,8 +186,11 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
 
         def _row(**extra):
             tier, cloud = _boundary(model)
+            # tenant_id (when the control plane resolved one) tags every audit row
+            # so the tamper-evident evidence segregates cleanly per customer.
+            tenant_id = ((authz or {}).get("tenant") or {}).get("id")
             return dict(request_id=rid, key=fp, model=model, stream=stream,
-                        tier=tier, cloud=cloud,
+                        tier=tier, cloud=cloud, tenant=tenant_id,
                         duration_ms=round((time.perf_counter() - t0) * 1000, 1),
                         guardrail_enforce=cfg.guardrail_enforce, **extra)
 

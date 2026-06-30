@@ -98,6 +98,15 @@ def authorize(store: Store, plaintext_key: str, model: Optional[str],
         raise Denied(401, "key_expired", "Virtual key has expired.")
 
     team = store.get_team(key["team_id"]) if key.get("team_id") else None
+    tenant = store.get_tenant(key["tenant_id"]) if key.get("tenant_id") else None
+
+    # Tenant lifecycle — a suspended organization is refused at the wire, before
+    # any model/budget check (suspension is a real lever, not just a flag). This
+    # gates even cost-free listing, so a suspended customer reaches nothing.
+    if tenant and tenant.get("status") not in (None, "active"):
+        raise Denied(403, "tenant_suspended",
+                     f"Organization '{tenant.get('name')}' is suspended.",
+                     type_="permission_error")
 
     # Model allow-list: key list wins; else inherit the team's list. Empty == all.
     allow = key["models"] or (team["models"] if team else [])
@@ -108,7 +117,7 @@ def authorize(store: Store, plaintext_key: str, model: Optional[str],
 
     # Budgets — hard ceilings. Check both the key and its team.
     if not enforce_budget:
-        return {"key": key, "team": team}
+        return {"key": key, "team": team, "tenant": tenant}
     # Rate limit (per-key requests/min) — shed a flood before budget/upstream work.
     rpm = key.get("rpm_limit")
     if rpm and not _RATE.check_and_record(key["id"], int(rpm)):
@@ -122,7 +131,7 @@ def authorize(store: Store, plaintext_key: str, model: Optional[str],
         raise Denied(400, "budget_exceeded",
                      f"Team '{team['alias']}' budget exhausted.", type_="budget_exceeded")
 
-    return {"key": key, "team": team}
+    return {"key": key, "team": team, "tenant": tenant}
 
 
 def usage_tokens(data: Any) -> Tuple[int, int]:
@@ -137,8 +146,10 @@ def record(store: Store, *, request_id: Optional[str], authz: Dict[str, Any],
     cost = pricing.cost_usd(model or "", prompt_tokens, completion_tokens)
     key = authz.get("key") or {}
     team = authz.get("team") or {}
+    tenant = authz.get("tenant") or {}
     store.record_spend(
         request_id=request_id, key_id=key.get("id"), team_id=team.get("id") or None,
+        tenant_id=tenant.get("id") or None,
         model=model, prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
         cost=cost)
     return cost

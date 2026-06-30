@@ -49,9 +49,10 @@ def assess(audit_log_path: str, store) -> dict:
     identities = {r.get("key") for r in rows if r.get("key")}
     chain = verify_chain(audit_log_path)
 
-    teams = store.list_teams() if store else []
+    tenants = store.list_tenants() if store else []
     keys = store.list_keys() if store else []
     n_active = sum(1 for k in keys if k.get("active"))
+    n_suspended = sum(1 for t in tenants if t.get("status") != "active")
     n_scoped = sum(1 for k in keys
                    if (k.get("models") or k.get("max_budget") is not None or k.get("rpm_limit")))
 
@@ -61,8 +62,10 @@ def assess(audit_log_path: str, store) -> dict:
 
     controls = [
         c("AC-2 / AC-3", "AC.L2-3.1.1", "Account Mgmt / Access Enforcement",
-          "Per-org virtual keys; per-key model allow-lists + budgets + rate limits",
-          f"{len(teams)} orgs, {n_active} active scoped keys; {n_deny} requests denied at the boundary",
+          "Per-tenant isolation; per-org virtual keys with model allow-lists, "
+          "budgets + rate limits; suspension enforced at the auth gate",
+          f"{len(tenants)} isolated tenant orgs ({n_suspended} suspended), "
+          f"{n_active} active scoped keys; {n_deny} requests denied at the boundary",
           "operating" if n_active else "ready"),
         c("AC-6", "AC.L2-3.1.5", "Least Privilege",
           "Per-key/team model allow-lists, spend caps, RPM ceilings",
