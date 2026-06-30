@@ -396,19 +396,29 @@ class Store:
                            "requests": r["n"]} for r in by_tenant],
         }
 
-    def tenant_usage(self, tenant_id: str) -> Dict[str, Any]:
+    def tenant_usage(self, tenant_id: str, since: Optional[str] = None,
+                     until: Optional[str] = None) -> Dict[str, Any]:
         """Per-tenant metered usage — the read the billing layer aggregates from
-        and the tenant-facing 'my usage' view renders."""
+        and the tenant-facing 'my usage' view renders. since/until (ISO ts) scope
+        it to a billing window: ts >= since AND ts < until."""
+        where = "tenant_id=?"
+        params: List[Any] = [tenant_id]
+        if since:
+            where += " AND ts>=?"
+            params.append(since)
+        if until:
+            where += " AND ts<?"
+            params.append(until)
         row = self._db.execute(
             "SELECT COALESCE(SUM(cost),0) c, COUNT(*) n, "
             "COALESCE(SUM(prompt_tokens),0) pt, COALESCE(SUM(completion_tokens),0) ct, "
             "COALESCE(SUM(CASE WHEN estimated=1 THEN cost ELSE 0 END),0) ec "
-            "FROM spend_log WHERE tenant_id=?", (tenant_id,)).fetchone()
+            f"FROM spend_log WHERE {where}", params).fetchone()
         by_model = self._db.execute(
             "SELECT model, COALESCE(SUM(cost),0) c, COUNT(*) n, "
             "COALESCE(SUM(prompt_tokens),0) pt, COALESCE(SUM(completion_tokens),0) ct "
-            "FROM spend_log WHERE tenant_id=? GROUP BY model ORDER BY c DESC",
-            (tenant_id,)).fetchall()
+            f"FROM spend_log WHERE {where} GROUP BY model ORDER BY c DESC",
+            params).fetchall()
         return {
             "tenant_id": tenant_id,
             "total_cost": round(row["c"], 6),

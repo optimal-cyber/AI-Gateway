@@ -191,6 +191,7 @@ async function refresh() {
     const models = (await api('GET', '/models')).data || [];
     const tenants = (await api('GET', '/tenants')).data || [];
     const spend = await api('GET', '/spend');
+    PLANS = (await api('GET', '/plans')).data || [];
     $('models').tBodies[0].innerHTML = models.map(m =>
       `<tr><td><code>${esc(m.id)}</code></td>
        <td><span class="pill ${m.tier}">${m.tier}</span></td></tr>`).join('') || empty(2);
@@ -217,9 +218,11 @@ async function refresh() {
         : `<button class=ghost onclick="setTenant('${t.id}','activate')">activate</button>`;
       return `<tr><td>${esc(t.name)}</td><td><code>${esc(t.slug)}</code></td>
         <td><span class="pill ${t.tier === 'gov' ? 'gov' : 'dev'}">${esc(t.tier)}</span></td>
-        <td>${st}</td><td>${esc(t.plan || '—')}</td>
+        <td>${st}</td>
+        <td><select onchange="setPlan('${t.id}', this.value)">${planOpts(t.plan)}</select></td>
         <td>${u.cost != null ? '$' + u.cost.toFixed(2) + ' · ' + u.requests : '—'}</td>
-        <td><code>${t.id}</code></td><td>${act}</td></tr>`;
+        <td><code>${t.id}</code></td>
+        <td>${act} <button class=ghost onclick="showInvoice('${t.id}')">invoice</button></td></tr>`;
     }).join('') || empty(8);
     $('ten_sum').textContent = tenants.length ? ` — ${tenants.length} orgs` : ' — none yet';
     loadAudit(); loadRequests(); loadCompliance();
@@ -228,6 +231,13 @@ async function refresh() {
 }
 const empty = n => `<tr><td colspan="${n}" style="color:var(--muted)">none yet</td></tr>`;
 const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+// -- Tenants: plan catalog (loaded in refresh, used by the per-tenant selector) --
+let PLANS = [];
+function planOpts(sel) {
+  return ['<option value="">— pass-through —</option>'].concat(
+    PLANS.map(p => `<option value="${p.id}" ${p.id === (sel || '') ? 'selected' : ''}>${esc(p.name || p.id)}</option>`)).join('');
+}
 
 // -- Audit & evidence: the append-only ledger (the compliance-evidence surface) --
 let AUDIT = [];
@@ -390,6 +400,19 @@ async function setTenant(id, action) {
       ? 'Tenant suspended — every key it owns is now refused at the auth gate.'
       : 'Tenant reactivated — its keys work again.', true);
     refresh();
+  } catch (e) { msg('Error: ' + e.message, false); }
+}
+async function setPlan(id, plan) {
+  try { await api('POST', '/tenants/' + id + '/plan', { plan: plan || null });
+    msg('Plan updated.', true); refresh();
+  } catch (e) { msg('Error: ' + e.message, false); }
+}
+async function showInvoice(id) {
+  try {
+    const inv = await api('GET', '/tenants/' + id + '/invoice');
+    const est = inv.estimated_usage > 0 ? ` · incl. $${inv.estimated_usage.toFixed(4)} estimated` : '';
+    msg(`Invoice — ${inv.tenant_name} · ${inv.plan.name}: $${inv.total.toFixed(2)} `
+        + `(raw usage $${inv.subtotal_usage_raw.toFixed(4)}${est})`, true);
   } catch (e) { msg('Error: ' + e.message, false); }
 }
 

@@ -29,6 +29,10 @@ class TenantCreate(BaseModel):
     contact_email: Optional[str] = None
 
 
+class PlanBody(BaseModel):
+    plan: Optional[str] = None
+
+
 class TeamCreate(BaseModel):
     alias: str
     tier: str = Field(default="dev")
@@ -141,6 +145,59 @@ def build_router() -> APIRouter:
             raise HTTPException(status_code=404, detail={"error": {
                 "message": "tenant not found", "type": "invalid_request_error"}})
         return _store(request).tenant_usage(tenant_id)
+
+    # -- billing: plans, usage -> invoice, payment-provider sync -----------
+    @r.get("/plans")
+    async def list_plans(request: Request):
+        _require_admin(request)
+        from . import billing
+        return {"data": billing.list_plans()}
+
+    @r.post("/tenants/{tenant_id}/plan")
+    async def set_plan(tenant_id: str, body: PlanBody, request: Request):
+        _require_admin(request)
+        from . import billing
+        store = _store(request)
+        if not store.get_tenant(tenant_id):
+            raise HTTPException(status_code=404, detail={"error": {
+                "message": "tenant not found", "type": "invalid_request_error"}})
+        if body.plan is not None and not billing.is_known_plan(body.plan):
+            raise HTTPException(status_code=400, detail={"error": {
+                "message": f"unknown plan '{body.plan}'", "type": "invalid_request_error"}})
+        store.set_tenant_plan(tenant_id, body.plan)
+        return store.get_tenant(tenant_id)
+
+    def _invoice_for(request: Request, tenant_id: str, period: Optional[str]):
+        from . import billing
+        store = _store(request)
+        tenant = store.get_tenant(tenant_id)
+        if not tenant:
+            raise HTTPException(status_code=404, detail={"error": {
+                "message": "tenant not found", "type": "invalid_request_error"}})
+        try:
+            since, until = billing.month_window(period)
+        except ValueError:
+            raise HTTPException(status_code=400, detail={"error": {
+                "message": "period must be 'YYYY-MM'", "type": "invalid_request_error"}})
+        usage = store.tenant_usage(tenant_id, since=since, until=until)
+        plan = billing.resolve_plan(tenant.get("plan"))
+        return billing.build_invoice(tenant=tenant, usage=usage, plan=plan,
+                                     since=since, until=until)
+
+    @r.get("/tenants/{tenant_id}/invoice")
+    async def tenant_invoice(tenant_id: str, request: Request,
+                             period: Optional[str] = None):
+        _require_admin(request)
+        return _invoice_for(request, tenant_id, period)
+
+    @r.post("/tenants/{tenant_id}/invoice/sync")
+    async def sync_invoice(tenant_id: str, request: Request,
+                           period: Optional[str] = None):
+        _require_admin(request)
+        from . import billing
+        invoice = _invoice_for(request, tenant_id, period)
+        result = billing.provider_from_env().sync_invoice(invoice)
+        return {"invoice": invoice, "sync": result}
 
     # -- teams -------------------------------------------------------------
     @r.post("/teams")
