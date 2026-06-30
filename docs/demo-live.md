@@ -72,10 +72,10 @@ cd /opt/ai-lab/repo && ./scripts/run-smoke-tests.sh
 
 ## Part A — the operational demo (`scripts/demo.sh`)
 
-A single narrated script that drives the **live** gateway through the four pillars —
-**Authorize → Forward → Guard → Prove** — for a business / government-stakeholder
-audience. Run it from an SSM shell on the **gateway-host** (the façade is on
-`127.0.0.1:4001`):
+A single narrated script that drives the **live** gateway through five pillars —
+**Authorize → Forward → Guard → Prove → Operate** — for a business /
+government-stakeholder audience. Run it from an SSM shell on the **gateway-host**
+(the façade is on `127.0.0.1:4001`):
 
 ```bash
 # SSM into gateway-host (no SSH — ADR-006), then:
@@ -84,7 +84,7 @@ sudo /opt/ai-lab/repo/scripts/demo.sh
 DEMO_PAUSE=1 sudo /opt/ai-lab/repo/scripts/demo.sh
 ```
 
-What the audience sees (all against the live system, ~15s):
+What the audience sees (all against the live system, ~25s):
 
 1. **AUTHORIZE** — an approved org (`Aegis Defense Corp`) is onboarded and issued a
    **scoped, budgeted** credential. An **unknown key is rejected** (401) and an
@@ -102,6 +102,12 @@ What the audience sees (all against the live system, ~15s):
    allow / deny / block with a **non-reversible identity fingerprint**, model,
    tokens, latency, and metered spend — and **no prompt/response content** (data
    minimization).
+5. **OPERATE** — the product layer. The org is an **isolated tenant**: suspending it
+   **refuses its key at the wire instantly** (HTTP 403), and reactivating restores it.
+   Its metered usage rolls into a **plan-based invoice** (unpriced models flagged
+   *estimated*, never silently $0). And a **customer portal token** logs the customer
+   into a view scoped to *only their tenant*, where they **self-serve their own scoped
+   API key** — multi-tenant SaaS, not one shared key.
 
 The script mints a fresh demo credential each run and **revokes it on exit** (the
 demo org team is retained for re-runs). Override `GATEWAY_URL` / `ORG_NAME` /
@@ -130,9 +136,16 @@ Cloudflare Single Redirect on `gateway.optimallabs.io`: path `/` → 302 `/admin
 1. Browser → **`https://gateway.optimallabs.io/admin/ui`**.
 2. Cloudflare Access → Okta + MFA (must be `lab-admins`, US geo, WARP).
 3. Paste the **master key** (`gateway_master_key`) and walk the control plane:
+   - **Tenants** — each customer org isolated; **suspend/activate** (refuses its keys
+     at the gate), per-tenant plan selector + live usage, and a one-click **invoice**.
    - **Teams** — per-org teams, tier (dev/gov) + budget + live spend.
    - **Keys** — mint scoped/budgeted virtual keys; revoke; per-key spend.
    - **Spend** — real-time metering per org/key.
+
+The **customer portal** is a separate surface at **`/portal/ui`**: a customer pastes
+their **portal token** (issued from the Tenants panel) and sees only their own org —
+usage, invoice, and self-service key minting. Show it next to the admin console to make
+the multi-tenant story concrete.
 
 The **chat client** (`https://chat.optimallabs.io`, the Optimal-branded chat app
 behind the same Okta gate) is the "anyone can use it" surface — but the

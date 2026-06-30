@@ -16,6 +16,9 @@
 #   4. PROVE      — every decision lands in an append-only, identity-fingerprinted
 #                   audit ledger with NO prompt/response content. The audit is the
 #                   product.
+#   5. OPERATE    — the product layer: isolated tenants + instant suspension,
+#                   metered usage rolled into a plan-based invoice, and a customer
+#                   self-service portal scoped to one tenant.
 #
 # Designed to run on the gateway-host (façade on 127.0.0.1:4001) over an SSM
 # shell, or anywhere GATEWAY_URL + a master/bootstrap key are reachable.
@@ -214,9 +217,58 @@ proves "The same signals that govern the call compute the compliance evidence an
 pause
 
 # ============================================================================
+# ACT 5 — OPERATE (the product layer: tenants, metering, billing, portal)
+# ============================================================================
+act "ACT 5 · OPERATE" "The fundamentals that make it a product, not a demo: isolated tenants, metered usage, plan-based billing, and customer self-service."
+
+TENANTS=$(curl -sS -m 10 "${GW_URL}/admin/tenants" -H "Authorization: Bearer ${MASTER}" 2>/dev/null)
+TENANT_ID=$(printf '%s' "$TENANTS" | jget "next((t['id'] for t in d.get('data',[]) if t.get('name')==\"$ORG_NAME\"), '')")
+
+if [[ -z "$TENANT_ID" ]]; then
+  note "(multi-tenant control plane not active here — skipping Act 5)"
+else
+  # -- tenant isolation + lifecycle (suspension is a real auth-gate switch) ---
+  ok "Tenant isolated: ${B}${ORG_NAME}${R}  ${DIM}(${TENANT_ID} — its keys, usage & audit scoped to it)${R}"
+  post "/admin/tenants/${TENANT_ID}/suspend" "$MASTER" "" >/dev/null
+  read -r code _ < <(chat "$ORG_KEY" "claude-opus-4-8" "hello")
+  [[ "$code" == "403" ]] && guard "Tenant ${B}SUSPENDED${R} → its key refused at the wire ${DIM}(HTTP 403 tenant_suspended)${R}, instantly" \
+                         || note "suspend check returned HTTP ${code} (expected 403)"
+  post "/admin/tenants/${TENANT_ID}/activate" "$MASTER" "" >/dev/null
+  read -r code _ < <(chat "$ORG_KEY" "claude-opus-4-8" "hello")
+  [[ "$code" == "200" ]] && ok "Reactivated → the same key works again" \
+                         || note "reactivate check returned HTTP ${code}"
+  proves "Suspension is a real switch at the auth gate — offboarding / non-payment / abuse in one toggle."
+  pause
+
+  # -- metered usage rolled into a plan-based invoice ------------------------
+  post "/admin/tenants/${TENANT_ID}/plan" "$MASTER" '{"plan":"pro"}' >/dev/null
+  curl -sS -m 10 -o "$BODY" "${GW_URL}/admin/tenants/${TENANT_ID}/invoice" \
+    -H "Authorization: Bearer ${MASTER}" 2>/dev/null
+  PLAN=$(jget 'd.get("plan",{}).get("name","")' < "$BODY")
+  TOTAL=$(jget 'd.get("total",0)' < "$BODY")
+  RAW=$(jget 'd.get("subtotal_usage_raw",0)' < "$BODY")
+  eviden "Metered & billed: ${B}${PLAN}${R} plan — invoice ${B}\$${TOTAL}${R} ${DIM}(metered usage \$${RAW}; unpriced models flagged 'estimated', never silently \$0)${R}"
+  proves "Per-tenant spend rolls into a plan-based invoice — usage-based billing, not a spreadsheet."
+  pause
+
+  # -- customer self-service portal (login scoped to one tenant) -------------
+  post "/admin/tenants/${TENANT_ID}/portal-tokens" "$MASTER" "" >/dev/null
+  PTOKEN=$(jget 'd.get("token","")' < "$BODY")
+  curl -sS -m 10 -o "$BODY" "${GW_URL}/portal/me" -H "Authorization: Bearer ${PTOKEN}" 2>/dev/null
+  PNAME=$(jget 'd.get("name","")' < "$BODY")
+  ok "Customer login issued — portal token scoped to ${B}${PNAME:-the org}${R} only ${DIM}(sees no other tenant)${R}"
+  post "/portal/keys" "$PTOKEN" '{"alias":"self-service"}' >/dev/null
+  PKEY=$(jget 'd.get("key","")' < "$BODY")
+  [[ -n "$PKEY" ]] && ok "Customer self-served their OWN scoped API key  ${DIM}(no operator ticket)${R}" \
+                   || note "portal key mint returned no key"
+  proves "Each customer signs into their OWN view and provisions their OWN keys — multi-tenant SaaS, no shared key."
+  pause
+fi
+
+# ============================================================================
 # Close
 # ============================================================================
-act "ONE SECURE DOOR" "Authorized · Scanned · Routed across clouds · Proven."
+act "ONE SECURE DOOR" "Authorized · Scanned · Routed across clouds · Proven · Isolated · Metered · Billed."
 note "FedRAMP 20x · NIST AI RMF · ISO 42001 · SOC 2 — posture computed from these same signals."
 note "Sovereign by default. Zero-persistence option. No wrapper, no SDK rewrite."
 echo
